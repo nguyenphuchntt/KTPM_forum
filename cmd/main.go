@@ -11,9 +11,15 @@ import (
 	"forum/server/utils"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found, using on environment variables.")
+	}
 	// Check if running in Docker
 	isDocker := os.Getenv("BASE_PATH") != ""
 	if isDocker {
