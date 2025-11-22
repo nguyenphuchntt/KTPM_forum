@@ -1,3 +1,6 @@
 .vscode/
 server/database/database.db
 k6-tests/
+.exe
+.idea/
+cmd/.env
