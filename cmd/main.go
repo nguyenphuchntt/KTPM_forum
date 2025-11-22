@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"forum/server/config"
+	"forum/server/middleware"
 	"forum/server/routes"
 	"forum/server/utils"
 
@@ -47,13 +48,22 @@ func main() {
 	}
 	
 
-	// Start the HTTP server
+	// Initialize rate limit config
+	rateLimitConfig := config.DefaultRateLimitConfig()
+
+	// Initialize global rate limiting middleware
+	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
+	
+	// Start the HTTP server with rate limiting
+	handler := rateLimitMiddleware.Limit(routes.Routes(db))
+	
 	server := http.Server{
 		Addr:    ":8080",
-		Handler: routes.Routes(db),
+		Handler: handler,
 	}
 
 	log.Println("Server starting on http://localhost:8080")
+	log.Println("Rate limiting enabled: Global + Per-User/IP + Endpoint-specific")
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal("Server error:", err)
 	}
