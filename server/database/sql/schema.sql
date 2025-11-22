@@ -83,3 +83,11 @@ CREATE TABLE IF NOT EXISTS comment_reactions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_session_id ON sessions(session_id);
+CREATE INDEX idx_category_id ON post_category(category_id);
+CREATE INDEX idx_post_id ON post_category(post_id);
+CREATE INDEX idx_post_reaction ON post_reactions(post_id, reaction);
+CREATE INDEX idx_user_reaction ON post_reactions(user_id, reaction);
+CREATE INDEX idx_comment_reaction ON comment_reactions(comment_id, reaction);
+CREATE INDEX idx_post_created ON comments(post_id, created_at);

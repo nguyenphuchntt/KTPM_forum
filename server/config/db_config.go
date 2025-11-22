@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/joho/godotenv"
@@ -22,6 +23,11 @@ func Connect() (*sql.DB, error) {
 
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(10 * time.Minute)
 
 	err = db.Ping()
 	if err != nil {
