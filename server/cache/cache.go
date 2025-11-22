@@ -1,42 +1,46 @@
 package cache
 
 import (
-	"sync"
+	"forum/server/config"
+	"log"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 type Cache struct {
-	mu    sync.RWMutex
-	items map[string]CacheItem
+	lru *lru.Cache[string, CacheItem]
 }
 
 func New() *Cache {
+	lruCache, err := lru.New[string, CacheItem](config.CacheSize)
+
+	if err != nil {
+		log.Fatalf("Failed to create LRU cache: %v", err)
+	}
 	return &Cache{
-		items: make(map[string]CacheItem),
+		lru: lruCache,
 	}
 }
 
 // SET
 func (cache *Cache) Set(key string, data interface{}, ttl time.Duration) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	var ex int64
+	var ex time.Time
 	if ttl > 0 {
-		ex = time.Now().Add(ttl).UnixNano()
+		ex = time.Now().Add(ttl)
 	}
 
-	cache.items[key] = CacheItem{
+	item := CacheItem{
 		Data:      data,
 		ExpiresAt: ex,
 	}
+
+	cache.lru.Add(key, item)
 }
 
 // GET
 func (cache *Cache) Get(key string) (interface{}, bool) {
-	cache.mu.RLock()
-	item, found := cache.items[key]
-	cache.mu.RUnlock()
+	item, found := cache.lru.Get(key)
 
 	if !found {
 		return nil, false
@@ -52,10 +56,8 @@ func (cache *Cache) Get(key string) (interface{}, bool) {
 
 // DELETE
 func (cache *Cache) Delete(key string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	delete(cache.items, key)
+	log.Println("Deleting cache key:", key)
+	cache.lru.Remove(key)
 }
 
 var AppCache = New()

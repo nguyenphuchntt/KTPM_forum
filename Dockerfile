@@ -12,6 +12,8 @@ RUN go mod download
 
 COPY . .
 
+RUN go mod tidy
+
 ENV BASE_PATH="/app/"
 
 RUN CGO_ENABLED=1 go build -o forum ./cmd/main.go
