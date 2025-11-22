@@ -10,11 +10,13 @@ WORKDIR /app
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
 # Copy source code
 COPY . .
+
+RUN go mod tidy
+
+# Download dependencies
+RUN go mod download
 
 # Set environment variable for template base path
 ENV BASE_PATH="/app/"
