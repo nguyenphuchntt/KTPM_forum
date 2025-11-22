@@ -1,3 +1,5 @@
 .vscode/
 server/database/database.db
 .exe
+.idea/
+cmd/.env
