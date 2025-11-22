@@ -8,7 +8,7 @@ import (
 )
 
 func StoreSession(db *sql.DB, user_id int, session_id string, expires_at time.Time) error {
-	query := `INSERT OR REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
+	query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
 
 	_, err := db.Exec(query, user_id, session_id, expires_at)
 	if err != nil {

@@ -36,7 +36,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -132,7 +132,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT COUNT(*)
 			FROM post_reactions AS pr
@@ -208,7 +208,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			u.username,
 			p.title,
 			p.content,
-			strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+			DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 			(
 				SELECT
 					COUNT(*)
@@ -303,7 +303,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -401,7 +401,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
