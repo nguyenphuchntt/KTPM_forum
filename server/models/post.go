@@ -36,7 +36,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -132,7 +132,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT COUNT(*)
 			FROM post_reactions AS pr
@@ -208,7 +208,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			u.username,
 			p.title,
 			p.content,
-			strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+			DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 			(
 				SELECT
 					COUNT(*)
@@ -303,7 +303,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -401,7 +401,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 		u.username,
 		p.title,
 		p.content,
-		strftime('%m/%d/%Y %I:%M %p', p.created_at) AS formatted_created_at,
+		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -514,6 +514,32 @@ func StorePostCategory(db *sql.DB, post_id int64, category_id int) (int64, error
 	postcatID, _ := result.LastInsertId()
 
 	return postcatID, nil
+}
+
+func StoreAllPostCategories(db *sql.DB, post_id int64, category_ids []int) (int64, error) {
+	if len(category_ids) == 0 {
+		return 0, nil
+	}
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("INSERT INTO post_category (post_id, category_id) VALUES ")
+
+	values := []interface{}{}
+
+	for i, category_id := range category_ids {
+		if i > 0 {
+			queryBuilder.WriteString(", ")
+		}
+		queryBuilder.WriteString("(?, ?)")
+		values = append(values, post_id, category_id)
+	}
+
+	_, err := db.Exec(queryBuilder.String(), values...)
+	if err != nil {
+		return 0, fmt.Errorf("%v", err)
+	}
+
+	return int64(len(category_ids)), nil
 }
 
 func StorePostReaction(db *sql.DB, user_id, post_id int, reaction string) (int64, error) {
