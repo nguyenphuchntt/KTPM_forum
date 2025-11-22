@@ -4,10 +4,14 @@ import "time"
 
 type CacheItem struct {
 	Data      interface{}
-	ExpiresAt int64
+	ExpiresAt time.Time
 }
 
 func IsExpired(item CacheItem) bool {
-	return item.ExpiresAt > 0 && time.Now().UnixNano() > item.ExpiresAt
+	if item.ExpiresAt.IsZero() {
+		return false
+	}
+	return time.Now().After(item.ExpiresAt)
 }
+
 
