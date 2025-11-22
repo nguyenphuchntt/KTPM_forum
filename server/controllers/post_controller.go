@@ -9,9 +9,28 @@ import (
 	"strconv"
 	"strings"
 
+	"fmt"
+	"forum/server/cache"
+	"forum/server/config"
+
 	"forum/server/models"
 	"forum/server/utils"
 )
+
+func getPostFromCache(cacheKey string) ([]models.Post, bool) {
+	cachedData, found := cache.AppCache.Get(cacheKey)
+	if !found {
+		return nil, false
+	}
+
+	posts, ok := cachedData.([]models.Post)
+	if !ok {
+		cache.AppCache.Delete(cacheKey)
+		return nil, false
+	}
+
+	return posts, true
+}
 
 func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	var valid bool
@@ -32,15 +51,36 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if page < 0 {
 		page = 0
 	}
+
+	cacheKey := "index_posts_page_" + strconv.Itoa(page)
+
+	posts, found := getPostFromCache(cacheKey)
+	if found {
+		log.Println("Cache hit:", cacheKey)
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
+			log.Println("Error rendering template:", err)
+			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		}
+		return
+	}
+
+	log.Println("Cache miss:", cacheKey)
+	
+	// If cache miss 
 	posts, statusCode, err := models.FetchPosts(db, page)
 	if err != nil {
 		log.Println("Error fetching posts:", err)
 		utils.RenderError(db, w, r, statusCode, valid, username)
 		return
 	}
+
 	if posts == nil && page > 0 {
 		utils.RenderError(db, w, r, 404, valid, username)
 		return
+	}
+
+	if err == nil && posts != nil {
+		cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
 	}
 
 	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
@@ -66,11 +106,11 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if e := models.CheckCategories(db,[]int{id}); e!= nil {
+	if e := models.CheckCategories(db, []int{id}); e != nil {
 		utils.RenderError(db, w, r, 404, valid, username)
 		return
 	}
-	
+
 	pid := r.FormValue("PageID")
 	page, _ := strconv.Atoi(pid)
 	page = (page - 1) * 10
@@ -78,6 +118,20 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		page = 0
 	}
 
+	cacheKey := fmt.Sprintf("category_posts_%d_page_%d", id, int(page))
+
+	posts, found := getPostFromCache(cacheKey)
+	if found {
+		log.Println("Cache hit:", cacheKey)
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
+			log.Println("Error rendering template:", err)
+			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		}
+		return
+	}
+	log.Println("Cache miss:", cacheKey)
+
+	// If cache miss
 	posts, statusCode, err := models.FetchPostsByCategory(db, id, page)
 	if err != nil {
 		log.Println("Error fetching posts:", err)
@@ -89,6 +143,10 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.RenderError(db, w, r, 404, valid, username)
 		return
 	}
+
+	if err == nil && posts != nil {
+        cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
+    }
 
 	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
 		log.Println("Error rendering template:", err)
@@ -111,14 +169,34 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
 		return
 	}
-	post, statusCode, err := models.FetchPost(db, postID)
+
+	cacheKey := "post_" + strconv.Itoa(postID)
+
+	posts, found := getPostFromCache(cacheKey)
+	if found {
+		if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, posts[0], valid, username); err != nil {
+			log.Println("Error rendering template:", err)
+			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+			return
+		}
+		return
+	}
+
+	// If cache miss
+	log.Println("Cache miss:", cacheKey)
+
+	postDetail, statusCode, err := models.FetchPost(db, postID)
 	if err != nil {
 		log.Println("Error fetching posts from the database:", err)
 		utils.RenderError(db, w, r, statusCode, valid, username)
 		return
 	}
 
-	err = utils.RenderTemplate(db, w, r, "post", statusCode, post, valid, username)
+	if err == nil && postDetail.Post.ID != 0 {
+		cache.AppCache.Set(cacheKey, []models.Post{postDetail.Post}, config.CacheTTL)
+	}
+
+	err = utils.RenderTemplate(db, w, r, "post", statusCode, postDetail, valid, username)
 	if err != nil {
 		log.Println(err)
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
@@ -201,13 +279,11 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	for i := 0; i < len(catidsInt); i++ {
+	_, err = models.StoreAllPostCategories(db, pid, catidsInt)
 
-		_, err = models.StorePostCategory(db, pid, catidsInt[i])
-		if err != nil {
-			w.WriteHeader(400)
-			return
-		}
+	cache.AppCache.Delete("index_posts_page_0")
+	for i := 0; i < len(catidsInt); i++ {
+		cache.AppCache.Delete("category_posts_" + strconv.Itoa(catidsInt[i]) + "_page_0")
 	}
 
 	w.Header().Set("Content-Type", "text/html")

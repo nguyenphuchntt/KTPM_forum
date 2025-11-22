@@ -24,7 +24,7 @@ func FetchCommentsByPostID(postID int, db *sql.DB) ([]Comment, error) {
 		c.user_id,
 		u.username,
 		c.content,
-		strftime('%m/%d/%Y %I:%M %p', c.created_at) AS formatted_created_at,
+		DATE_FORMAT(c.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
 				COUNT(*)
@@ -124,7 +124,7 @@ func CountCommentsByPostID(db *sql.DB, postID int) (int, error) {
 // Fetch the creation time of a comment by its ID
 func FetchCommentTimeByID(db *sql.DB, commentID int64) (string, error) {
 	var commentTime string
-	query := "SELECT strftime('%m/%d/%Y %I:%M %p', created_at) AS formatted_created_at FROM comments WHERE id = ?"
+	query := "SELECT DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at FROM comments WHERE id = ?"
 	err := db.QueryRow(query, commentID).Scan(&commentTime)
 	if err != nil {
 		return "", fmt.Errorf("error fetching comment time: %v", err)
