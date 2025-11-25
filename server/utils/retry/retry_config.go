@@ -71,11 +71,11 @@ func DatabaseWriteRetryConfig() RetryConfig {
 // 	}
 // }
 
-// func DatabaseSetupConfig() RetryConfig {
-// 	return RetryConfig{
-// 		MaxAttempts:         7,
-// 		InitialDelay:        2 * time.Second,
-// 		MaxDelay:            14 * time.Second,
-// 		Strategy:            LinearBackoff,
-// 	}
-// }
+func DatabaseSetupConfig() RetryConfig {
+	return RetryConfig{
+		MaxAttempts:         7,
+		InitialDelay:        2 * time.Second,
+		MaxDelay:            14 * time.Second,
+		Strategy:            LinearBackoff,
+	}
+}
