@@ -3,18 +3,17 @@ package retry
 import (
 	"context"
 	"fmt"
-	"forum/server/config"
 	"log"
 	"time"
 )
 
-func Try(ctx context.Context, cfg config.RetryConfig, callback func() error) error {
+func Try(ctx context.Context, cfg RetryConfig, callback func() error) error {
 	var lastError error
 
 	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%w: %v", config.ContextCancelled, ctx.Err())
+			return fmt.Errorf("%w: %v", ContextCancelled, ctx.Err())
 		default:
 		}
 
@@ -36,7 +35,7 @@ func Try(ctx context.Context, cfg config.RetryConfig, callback func() error) err
 		
 		if attempt >= cfg.MaxAttempts {
 			log.Printf("Max attempts reached. Last error:%v", err)
-			return fmt.Errorf("%w: %v", config.MaxAttemptsReached, err)
+			return fmt.Errorf("%w: %v", MaxAttemptsReached, err)
 		}
 
 		delay := CalculateDelay(cfg, attempt)
@@ -44,7 +43,7 @@ func Try(ctx context.Context, cfg config.RetryConfig, callback func() error) err
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%w: %v", config.ContextCancelled, ctx.Err())
+			return fmt.Errorf("%w: %v", ContextCancelled, ctx.Err())
 		case <-time.After(delay):
 		}
 	}
@@ -52,14 +51,14 @@ func Try(ctx context.Context, cfg config.RetryConfig, callback func() error) err
 	return lastError
 }
 
-func TryWithResult[T any] (ctx context.Context, cfg config.RetryConfig, callback func() (T, error)) (T, error) {
+func TryWithResult[T any] (ctx context.Context, cfg RetryConfig, callback func() (T, error)) (T, error) {
 	var result T
 	var lastError error
 
 	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
 		select {
 		case <-ctx.Done():
-			return result, fmt.Errorf("%w: %v", config.ContextCancelled, ctx.Err())
+			return result, fmt.Errorf("%w: %v", ContextCancelled, ctx.Err())
 		default:
 		}
 
@@ -78,7 +77,7 @@ func TryWithResult[T any] (ctx context.Context, cfg config.RetryConfig, callback
 		}
 		if attempt >= cfg.MaxAttempts {
 			log.Printf("Max attempts reached. Last error:%v", err)
-			return result, fmt.Errorf("%w: %v", config.MaxAttemptsReached, err)
+			return result, fmt.Errorf("%w: %v", MaxAttemptsReached, err)
 		}
 
 		delay := CalculateDelay(cfg, attempt)
@@ -86,7 +85,7 @@ func TryWithResult[T any] (ctx context.Context, cfg config.RetryConfig, callback
 
 		select {
 		case <-ctx.Done():
-			return result, fmt.Errorf("%w: %v", config.ContextCancelled, ctx.Err())
+			return result, fmt.Errorf("%w: %v", ContextCancelled, ctx.Err())
 		case <-time.After(delay):
 		}
 	}

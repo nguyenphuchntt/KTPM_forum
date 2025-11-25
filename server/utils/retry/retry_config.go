@@ -1,4 +1,4 @@
-package config
+package retry
 
 import (
 	"time"

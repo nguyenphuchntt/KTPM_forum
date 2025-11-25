@@ -3,10 +3,9 @@ package retry
 import (
 	"math"
 	"time"
-	"forum/server/config"
 )
 
-func CalculateDelay(cfg config.RetryConfig, attempt int) time.Duration {
+func CalculateDelay(cfg RetryConfig, attempt int) time.Duration {
 	if attempt <= 0 {
 		return 0
 	}
@@ -14,11 +13,11 @@ func CalculateDelay(cfg config.RetryConfig, attempt int) time.Duration {
 	var delay time.Duration
 
 	switch cfg.Strategy {
-	case config.FixedDelay:
+	case FixedDelay:
 		delay = cfg.InitialDelay
-	case config.LinearBackoff:
+	case LinearBackoff:
 		delay = time.Duration(attempt) * cfg.InitialDelay
-	case config.ExponentialBackoff:
+	case ExponentialBackoff:
 		multiplier := math.Pow(2, float64(attempt-1))
 		delay = time.Duration(float64(cfg.InitialDelay) * multiplier)
 	default:
