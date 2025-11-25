@@ -1,6 +1,12 @@
 package config
 
-import "time"
+import (
+	"time"
+	"errors"
+)
+
+var MaxAttemptsReached = errors.New("Maximum retry attempts reached")
+var ContextCancelled = errors.New("Context cancelled during attempting retry")
 
 type BackoffStrategy int
 const (
