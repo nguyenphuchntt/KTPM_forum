@@ -43,9 +43,9 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		GlobalBurst:             getEnvInt("GLOBAL_BURST", 150),
 
 		// Per-user/IP limits
-		UserRequestsPerMinute: getEnvInt("USER_RPM", 100),
+		UserRequestsPerMinute: getEnvInt("USER_RPM", 1000000000),
 		UserWindowSize:        1 * time.Minute,
-		IPRequestsPerMinute:   getEnvInt("IP_RPM", 50),
+		IPRequestsPerMinute:   getEnvInt("IP_RPM", 1000000000),
 		IPWindowSize:          1 * time.Minute,
 
 	// Endpoint-specific limits
@@ -56,11 +56,6 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 10),
 	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 30),
 	ReactionsPerMinute:        getEnvInt("REACTIONS_PER_MINUTE", 60),
-
-	// Feature flags
-		EnableRateLimit:        getEnvBool("ENABLE_RATE_LIMIT", true),
-		EnableEndpointLimits:   getEnvBool("ENABLE_ENDPOINT_LIMITS", true),
-		LogRateLimitViolations: getEnvBool("LOG_RATE_LIMIT_VIOLATIONS", true),
 	}
 }
 

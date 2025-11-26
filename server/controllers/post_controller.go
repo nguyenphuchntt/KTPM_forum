@@ -229,19 +229,25 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	cacheKey := "post_" + strconv.Itoa(postID)
 
-	posts, found := getPostFromCache(cacheKey)
+	// Try to get PostDetail from cache (changed from []Post to PostDetail)
+	cachedData, found := cache.AppCache.Get(cacheKey)
 	if found {
-		log.Info().
-			Int("post_id", postID).
-			Bool("cache_hit", true).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Post fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, posts[0], valid, username); err != nil {
-			log.Error().Err(err).Msg("Error rendering template")
-			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		postDetail, ok := cachedData.(models.PostDetail)
+		if ok {
+			log.Info().
+				Int("post_id", postID).
+				Bool("cache_hit", true).
+				Dur("duration_ms", time.Since(start)).
+				Msg("Post fetched from cache")
+			if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, postDetail, valid, username); err != nil {
+				log.Error().Err(err).Msg("Error rendering template")
+				utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+				return
+			}
 			return
 		}
-		return
+		// If type assertion failed, delete invalid cache
+		cache.AppCache.Delete(cacheKey)
 	}
 
 	// If cache miss
@@ -259,8 +265,9 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
+	// Cache the entire PostDetail, not just the Post
 	if err == nil && postDetail.Post.ID != 0 {
-		cache.AppCache.Set(cacheKey, []models.Post{postDetail.Post}, config.CacheTTL)
+		cache.AppCache.Set(cacheKey, postDetail, config.CacheTTL)
 	}
 
 	err = utils.RenderTemplate(db, w, r, "post", statusCode, postDetail, valid, username)

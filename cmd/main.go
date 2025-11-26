@@ -4,16 +4,21 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"database/sql"
+	"time"
 
 	"forum/server/config"
 	"forum/server/middleware"
 	"forum/server/routes"
 	"forum/server/utils"
 	"forum/server/logger"
+	"forum/server/metrics"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	_ "github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 )
 
 func main() {
@@ -36,7 +41,6 @@ func main() {
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("Database connection error")
 	}
-
 	// Handle database setup based on environment
 	if isDocker {
 		// Create the database schema and demo data
@@ -64,16 +68,38 @@ func main() {
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
 	
 	// Start the HTTP server with rate limiting
-	handler := rateLimitMiddleware.Limit(routes.Routes(db))
+	handler := middleware.MetricsMiddleware(rateLimitMiddleware.Limit(routes.Routes(db)))
 	
 	server := http.Server{
 		Addr:    ":8080",
 		Handler: handler,
 	}
 
+	go func() {
+        metricsServer := http.NewServeMux()
+        metricsServer.Handle("/metrics", promhttp.Handler())
+        
+        logger.Log.Info().Msg("Metrics server starting on :9090")
+        if err := http.ListenAndServe(":9090", metricsServer); err != nil {
+            logger.Log.Fatal().Err(err).Msg("Metrics server failed")
+        }
+    }()
+
 	logger.Log.Info().Msg("Server starting on http://localhost:8080")
 	logger.Log.Info().Msg("Rate limiting enabled: Global + Per-User/IP + Endpoint-specific")
 	if err := server.ListenAndServe(); err != nil {
 		logger.Log.Fatal().Err(err).Msg("Server error")
 	}
+}
+
+func collectDBStats(db *sql.DB) {
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        stats := db.Stats()
+        metrics.DbConnectionsInUse.Set(float64(stats.InUse))
+        metrics.DbConnectionsIdle.Set(float64(stats.Idle))
+        metrics.DbConnectionsOpen.Set(float64(stats.OpenConnections))
+    }
 }
