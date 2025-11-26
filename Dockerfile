@@ -20,4 +20,4 @@ RUN CGO_ENABLED=1 go build -o forum ./cmd/main.go
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "./forum --migrate && ./forum"]
+CMD ["sh", "-c", "./forum --migrate && ./forum --seed && ./forum"]

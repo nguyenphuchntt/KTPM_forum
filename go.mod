@@ -3,6 +3,7 @@ module forum
 go 1.24.0
 
 require (
+	golang.org/x/time v0.8.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/joho/godotenv v1.5.1
 	golang.org/x/crypto v0.45.0

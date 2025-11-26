@@ -48,10 +48,10 @@ function throttle(fn, delay) {
     };
 }
 
-const addcomment = throttle(addcomm, 5000)
+const addcomment = throttle(addcomm, 5000);
 
 function postreaction(postId, reaction) {
-    document.getElementById("errorlogin" + postId).innerText = ``
+    document.getElementById("errorlogin" + postId).innerText = ``;
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/post/postreaction", true);
     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -59,32 +59,37 @@ function postreaction(postId, reaction) {
         if (xhr.readyState === 4) {
             if (xhr.status === 200) {
                 const response = JSON.parse(xhr.responseText);
-                document.getElementById("likescount" + postId).innerHTML = `<i
-                    class="fa-regular fa-thumbs-up"></i>${response.likesCount}`;
-                document.getElementById("dislikescount" + postId).innerHTML = `<i
-                    class="fa-regular fa-thumbs-down"></i>${response.dislikesCount}`;
+                document.getElementById("likescount" + postId).innerHTML = `${response.likesCount}`;
+                document.getElementById("dislikescount" + postId).innerHTML = `${response.dislikesCount}`;
             } else if (xhr.status === 401) {
-                document.getElementById("errorlogin" + postId).innerText = `You must login first!`
+                document.getElementById(
+                    "errorlogin" + postId
+                ).innerText = `You must login first!`;
                 setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
+                    document.getElementById("errorlogin" + postId).innerText = ``;
                 }, 1000);
             } else if (xhr.status === 400) {
-                document.getElementById("errorlogin" + postId).innerText = `Bad request!`
+                document.getElementById(
+                    "errorlogin" + postId
+                ).innerText = `Bad request!`;
                 setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
+                    document.getElementById("errorlogin" + postId).innerText = ``;
                 }, 1000);
             } else if (xhr.status === 500) {
-                document.getElementById("errorlogin" + postId).innerText = `Try again later!`
+                document.getElementById(
+                    "errorlogin" + postId
+                ).innerText = `Try again later!`;
                 setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
+                    document.getElementById("errorlogin" + postId).innerText = ``;
                 }, 1000);
             }
-        };
-    }
+        }
+    };
     xhr.send(`reaction=${reaction}&post_id=${postId}`);
 }
+
 function commentreaction(commentid, reaction) {
-    document.getElementById("commenterrorlogin" + commentid).innerText = ``
+    document.getElementById("commenterrorlogin" + commentid).innerText = ``;
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/post/commentreaction", true);
     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -92,32 +97,42 @@ function commentreaction(commentid, reaction) {
         if (xhr.readyState === 4) {
             if (xhr.status === 200) {
                 const response = JSON.parse(xhr.responseText);
-                document.getElementById("commentlikescount" + commentid).innerHTML = `<i
-                    class="fa-regular fa-thumbs-up"></i>${response.commentlikesCount}`;
-                document.getElementById("commentdislikescount" + commentid).innerHTML = `<i
-                    class="fa-regular fa-thumbs-down"></i>${response.commentdislikesCount}`;
+                document.getElementById("commentlikescount" + commentid).innerHTML = `${response.commentlikesCount}`;
+                document.getElementById(
+                    "commentdislikescount" + commentid
+                ).innerHTML = `${response.commentdislikesCount}`;
             } else if (xhr.status === 401) {
-                document.getElementById("commenterrorlogin" + commentid).innerText = `You must login first!`
+                document.getElementById(
+                    "commenterrorlogin" + commentid
+                ).innerText = `You must login first!`;
                 setTimeout(() => {
-                    document.getElementById("commenterrorlogin" + commentid).innerText = ``
+                    document.getElementById(
+                        "commenterrorlogin" + commentid
+                    ).innerText = ``;
                 }, 1000);
-
             } else if (xhr.status === 400) {
-                document.getElementById("commenterrorlogin" + commentid).innerText = `bad request!`
+                document.getElementById(
+                    "commenterrorlogin" + commentid
+                ).innerText = `bad request!`;
                 setTimeout(() => {
-                    document.getElementById("commenterrorlogin" + commentid).innerText = ``
+                    document.getElementById(
+                        "commenterrorlogin" + commentid
+                    ).innerText = ``;
                 }, 1000);
             } else if (xhr.status === 500) {
-                document.getElementById("commenterrorlogin" + commentid).innerText = `Try again later!`
+                document.getElementById(
+                    "commenterrorlogin" + commentid
+                ).innerText = `Try again later!`;
                 setTimeout(() => {
-                    document.getElementById("commenterrorlogin" + commentid).innerText = ``
+                    document.getElementById(
+                        "commenterrorlogin" + commentid
+                    ).innerText = ``;
                 }, 1000);
             }
-        };
-    }
+        }
+    };
     xhr.send(`reaction=${reaction}&comment_id=${commentid}`);
 }
-
 
 function addcomm(postId) {
     const content = document.getElementById("comment-content");
@@ -132,27 +147,20 @@ function addcomm(postId) {
                 if (xhr.status === 200) {
                     const response = JSON.parse(xhr.responseText);
                     const comment = document.createElement("div")
-                    comment.innerHTML = `
-                 <div class="comment">
-            <div class="comment-header">
-                <p class="comment-user">`+ response.username + `</p>
-                <span></span>
-                <p class="comment-time">`+ response.created_at + ` </p>
-            </div>
-            <div class="comment-body">
-                <p class="comment-content">`+ response.content + ` </p>
-            </div>
-            <div class="comment-footer">
-                <button id="commentlikescount`+ response.ID + `" onclick="commentreaction('` + response.ID + `','like')"
-                    class="comment-like"><i class="fa-regular fa-thumbs-up"></i>`+ response.likes + `</button>
-                <button id="commentdislikescount`+ response.ID + `" onclick="commentreaction('` + response.ID + `','dislike')"
-                    class="comment-dislike"><i class="fa-regular fa-thumbs-down"></i>`+ response.dislikes + `</button>
-            </div>
-            <span style="color:red" id="commenterrorlogin`+ response.ID + `"></span>
-        </div>
-                `
+                    comment.innerHTML = `<div class="comment">
+                        <div class="comment-header">
+                            <span class="comment-author">` + response.username + `</span>
+                            <span class="comment-date">` + response.created_at + `</span>
+                        </div>
+                        <div class="comment-body">` + response.content + `</div>
+                        <div class="comment-footer">
+                            <button onclick="commentreaction(` + response.comment_id + `, 1)">👍 <span id="commentlikescount` + response.comment_id + `">` + response.likes + `</span></button>
+                            <button onclick="commentreaction(` + response.comment_id + `, 0)">👎 <span id="commentdislikescount` + response.comment_id + `">` + response.dislikes + `</span></button>
+                        </div>
+                        <span id="commenterrorlogin` + response.comment_id + `"> </span>
+                    </div>`
                     document.getElementsByClassName("comments")[0].prepend(comment)
-                    document.getElementsByClassName("post-comments")[0].innerHTML = `<i class="fa-regular fa-comment"></i>` + response.commentscount
+                    document.getElementsByClassName("post-comments")[0].innerHTML = `` + response.commentscount
                     content.value = ""
                 } else if (xhr.status === 400) {
                     document.getElementById("errorlogin" + postId).innerText = `Invalid comment!`
@@ -170,7 +178,7 @@ function addcomm(postId) {
                         document.getElementById("errorlogin" + postId).innerText = ``
                     }, 1000);
                 }
-            };
+            }
         }
         xhr.send(data);
     } else {
@@ -179,28 +187,28 @@ function addcomm(postId) {
     }
 }
 
-const select = document.getElementById('categories-select');
+const select = document.getElementById("categories-select");
 if (select) {
-
-    select.addEventListener('change', (e) => {
+    select.addEventListener("change", (e) => {
         // Parse the value as JSON to extract id and label
         const selectedValue = JSON.parse(e.target.value);
         const { id, label } = selectedValue;
 
         // create the elemenet for the category
-        const span = document.createElement('span');
+        const span = document.createElement("span");
         span.textContent = label;
-        span.classList.add('selected-category');
+        span.classList.add("selected-category");
 
         // Add a remove button to the span
-        const removeBtn = document.createElement('span');
-        removeBtn.textContent = '×';
-        removeBtn.classList.add('remove-category');
-        removeBtn.addEventListener('click', () => {
+        const removeBtn = document.createElement("span");
+        removeBtn.textContent = "×";
+        removeBtn.classList.add("remove-category");
+        removeBtn.addEventListener("click", () => {
             span.remove();
             input.remove();
+
             // Re-enable the corresponding option in the select
-            Array.from(e.target.options).find(option => {
+            Array.from(e.target.options).find((option) => {
                 try {
                     const optionValue = JSON.parse(option.value);
                     return optionValue.id === id;
@@ -209,257 +217,248 @@ if (select) {
                 }
             }).disabled = false;
         });
-
         span.appendChild(removeBtn);
 
         // create hidden input to hold the id of selected category
-        const input = document.createElement('input')
-        input.type = 'hidden';
-        input.value = id
-        input.name = 'categories'
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.value = id;
+        input.name = "categories";
 
-        // add the elements (span and hidden input) 
+        // add the elements (span and hidden input)
         // at the first position of the categories container
-        const categoriesContainer = document.querySelector('.selected-categories');
+        const categoriesContainer = document.querySelector(".selected-categories");
         categoriesContainer.append(input, span);
 
         // disable the option selected in the select
         e.target.options[e.target.selectedIndex].disabled = true;
 
-        // Reset the select 
+        // Reset the select
         e.target.selectedIndex = 0;
     });
 }
 
 async function pagination(dir, data) {
-    const path = window.location.pathname
+    const path = window.location.pathname;
     if (dir === "next" && data) {
-        const page = +document.querySelector(".currentpage").innerText + 1
+        const page = +document.querySelector(".currentpage").innerText + 1;
         window.location.href = path + "?PageID=" + page;
     }
-
-    if (dir === "back" && document.querySelector(".currentpage").innerText > "1") {
-        const page = +document.querySelector(".currentpage").innerText - 1
+    if (
+        dir === "back" &&
+        document.querySelector(".currentpage").innerText > "1"
+    ) {
+        const page = +document.querySelector(".currentpage").innerText - 1;
         window.location.href = path + "?PageID=" + page;
     }
 }
 
-
-
 function CreatPost() {
-    const title = document.querySelector(".create-post-title")
-    const content = document.querySelector(".content")
-    const categories = document.querySelector(".selected-categories")
-    const logerror = document.querySelector(".errorarea")
+    const title = document.querySelector(".create-post-title");
+    const content = document.querySelector(".content");
+    const categories = document.querySelector(".selected-categories");
+    const logerror = document.querySelector(".errorarea");
 
     if (!title || !content || !categories || !logerror) return;
-    
+
     if (!title.value || !content.value || categories.childElementCount === 0) {
-        logerror.innerText = 'Please fill in all fields and select at least one category.'; 
+        logerror.innerText = "Please fill in all fields and select at least one category.";
         setTimeout(() => {
-            logerror.innerText = '';
+            logerror.innerText = "";
         }, 3000);
         return;
     }
 
     if (title.value.length > 100) {
-        logerror.innerText = 'Title is too long. Please keep it under 100 characters.';
+        logerror.innerText = "Title is too long. Please keep it under 100 characters.";
         setTimeout(() => {
-            logerror.innerText = '';
+            logerror.innerText = "";
         }, 3000);
         return;
     }
 
     if (content.value.length > 3000) {
-        logerror.innerText = 'Content is too long. Please keep it under 3000 characters.';
+        logerror.innerText = "Content is too long. Please keep it under 3000 characters.";
         setTimeout(() => {
-            logerrorinnerText = '';
+            logerror.innerText = "";
         }, 3000);
         return;
     }
 
-
-    let cateris = new Array()
-    Array.from(categories.getElementsByTagName('input')).forEach((x) => {
-        cateris.push(x.value)
-    })
+    let cateris = new Array();
+    Array.from(categories.getElementsByTagName("input")).forEach((x) => {
+        cateris.push(x.value);
+    });
 
     const data = `title=${encodeURIComponent(title.value)}&content=${encodeURIComponent(content.value)}&categories=${cateris}`;
 
     if (navigator.onLine) {
         const xml = new XMLHttpRequest();
-        xml.open("POST", "/post/createpost", true)
-        xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
-
+        xml.open("POST", "/post/createpost", true);
+        xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
         xml.onreadystatechange = function () {
             if (xml.readyState === 4) {
                 if (xml.status === 200) {
-                    const btn = document.getElementById("create-post-btn")
-                    document.getElementById("publish-post-icon").style.display = "none"
-                    document.getElementById("publish-post-circle").style.display = "inline-block"
-                    btn.disabled = true
-                    btn.style.background = "grey"
-                    btn.style.cursor = "not-allowed"
-
-
-                    logerror.innerText = 'Post created successfully, redirect to home page in 2s ...'
-                    logerror.style.color = "green"
+                    const btn = document.getElementById("create-post-btn");
+                    document.getElementById("publish-post-icon").style.display = "none";
+                    document.getElementById("publish-post-circle").style.display = "inline-block";
+                    btn.disabled = true;
+                    btn.style.background = "grey";
+                    btn.style.cursor = "not-allowed";
+                    logerror.innerText = "Post created successfully, redirect to home page in 2s ...";
+                    logerror.style.color = "green";
                     setTimeout(() => {
-                        window.location.href = '/'
-                    }, 2000)
-
+                        window.location.href = "/";
+                    }, 2000);
                 } else if (xml.status === 401) {
-                    logerror.innerText = 'You are loged out, redirect to login page in 2s...'
+                    logerror.innerText = "You are loged out, redirect to login page in 2s...";
                     setTimeout(() => {
-                        window.location.href = '/login'
-                    }, 2000)
-
+                        window.location.href = "/login";
+                    }, 2000);
                 } else {
-                    logerror.innerText = 'Error: check your entries and try again!'
+                    logerror.innerText = "Error: check your entries and try again!";
                     setTimeout(() => {
-                        logerror.innerText = ''
-                    }, 1500)
+                        logerror.innerText = "";
+                    }, 1500);
                 }
             }
-        }
-        xml.send(data)
+        };
+        xml.send(data);
     } else {
         saveOfflineRequest('/post/createpost', data);
         setTimeout(() => {
-            window.location.href = '/'
+            window.location.href = '/';
         }, 2000);
     }
 }
 
-
 function register() {
-    const email = document.querySelector("#email")
-    const username = document.querySelector("#username")
-    const password = document.querySelector("#password")
-    const passConfirm = document.querySelector("#password-confirmation")
+    const email = document.querySelector("#email");
+    const username = document.querySelector("#username");
+    const password = document.querySelector("#password");
+    const passConfirm = document.querySelector("#password-confirmation");
 
     const xml = new XMLHttpRequest();
-    xml.open("POST", "/signup", true)
-    xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
-
+    xml.open("POST", "/signup", true);
+    xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
     xml.onreadystatechange = function () {
         if (xml.readyState === 4) {
-            const logerror = document.querySelector(".errorarea")
+            const logerror = document.querySelector(".errorarea");
             if (xml.status === 200) {
-                logerror.innerText = `User ${username.value} created successfully, redirect to login page in 2s ...`
-                logerror.style.color = "green"
+                logerror.innerText = `User ${username.value} created successfully, redirect to login page in 2s ...`;
+                logerror.style.color = "green";
                 setTimeout(() => {
-                    window.location.href = '/login'
-                }, 2000)
-
+                    window.location.href = "/login";
+                }, 2000);
             } else if (xml.status === 302) {
-                logerror.innerText = 'You are already loged in, redirect to home page in 2s...'
-                logerror.style.color = "green"
+                logerror.innerText =
+                    "You are already loged in, redirect to home page in 2s...";
+                logerror.style.color = "green";
                 setTimeout(() => {
-                    window.location.href = '/'
-                }, 2000)
-
+                    window.location.href = "/";
+                }, 2000);
             } else if (xml.status === 400) {
-                logerror.innerText = 'Error: verify your data and try again!'
-                logerror.style.color = "red"
+                logerror.innerText = "Error: verify your data and try again!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             } else if (xml.status === 304) {
-                logerror.innerText = 'User already exists!'
-                logerror.style.color = "red"
+                logerror.innerText = "User already exists!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             } else {
-                logerror.innerText = 'Cannot create user, try again later!'
-                logerror.style.color = "red"
+                logerror.innerText = "Cannot create user, try again later!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             }
         }
-    }
-
+    };
     // Get form data
-    xml.send(`email=${encodeURIComponent(email.value)}&username=${encodeURIComponent(username.value)}&password=${encodeURIComponent(password.value)}&password-confirmation=${encodeURIComponent(passConfirm.value)}`)
-
-
+    xml.send(
+        `email=${encodeURIComponent(email.value)}&username=${encodeURIComponent(
+            username.value
+        )}&password=${encodeURIComponent(
+            password.value
+        )}&password-confirmation=${encodeURIComponent(passConfirm.value)}`
+    );
 }
 
-
-
 function login() {
-    const username = document.querySelector("#username")
-    const password = document.querySelector("#password")
+    const username = document.querySelector("#username");
+    const password = document.querySelector("#password");
 
     const xml = new XMLHttpRequest();
-    xml.open("POST", "/signin", true)
-    xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
-
+    xml.open("POST", "/signin", true);
+    xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
     xml.onreadystatechange = function () {
         if (xml.readyState === 4) {
-            const logerror = document.querySelector(".errorarea")
+            const logerror = document.querySelector(".errorarea");
             if (xml.status === 200) {
-                logerror.innerText = `Login in successfully, redirect to home page in 2s ...`
-                logerror.style.color = "green"
+                logerror.innerText = `Login in successfully, redirect to home page in 2s ...`;
+                logerror.style.color = "green";
                 setTimeout(() => {
-                    window.location.href = '/'
-                }, 2000)
-
+                    window.location.href = "/";
+                }, 2000);
             } else if (xml.status === 302) {
-                logerror.innerText = 'You are already loged in, redirect to home page in 2s...'
-                logerror.style.color = "green"
+                logerror.innerText =
+                    "You are already loged in, redirect to home page in 2s...";
+                logerror.style.color = "green";
                 setTimeout(() => {
-                    window.location.href = '/'
-                }, 2000)
-
+                    window.location.href = "/";
+                }, 2000);
             } else if (xml.status === 400) {
-                logerror.innerText = 'Error: verify your data and try again!'
-                logerror.style.color = "red"
+                logerror.innerText = "Error: verify your data and try again!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             } else if (xml.status === 404) {
-                logerror.innerText = 'User not found!'
-                logerror.style.color = "red"
+                logerror.innerText = "User not found!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             } else if (xml.status === 401) {
-                logerror.innerText = 'Invalid username or password!'
-                logerror.style.color = "red"
+                logerror.innerText = "Invalid username or password!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             } else {
-                logerror.innerText = 'Cannot log you in now, try again later!'
-                logerror.style.color = "red"
+                logerror.innerText = "Cannot log you in now, try again later!";
+                logerror.style.color = "red";
                 setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                    logerror.innerText = "";
+                }, 1500);
             }
         }
-    }
-
+    };
     // Get form data
-    xml.send(`username=${encodeURIComponent(username.value)}&password=${encodeURIComponent(password.value)}`)
+    xml.send(
+        `username=${encodeURIComponent(
+            username.value
+        )}&password=${encodeURIComponent(password.value)}`
+    );
 }
 
 const displayMobileNav = (e) => {
-    const nav = document.querySelector('.mobile-nav')
-    nav.style.display = 'block'
-}
+    const nav = document.querySelector(".mobile-nav");
+    nav.style.display = "block";
+};
 
 const closeMobileNav = (e) => {
-    const nav = document.querySelector('.mobile-nav')
-    nav.style.display = 'none'
-}
+    const nav = document.querySelector(".mobile-nav");
+    nav.style.display = "none";
+};
 
 // const formatTime = (timeStr) => {
 //     // Parse the input time string
 //     const date = new Date(timeStr);
-
 //     return date.toLocaleString('default', {
 //         hour: '2-digit',
 //         minute: '2-digit',
