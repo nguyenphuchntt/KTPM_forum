@@ -5,17 +5,26 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"forum/server/utils/retry"
+	"context"
 )
 
 func StoreSession(db *sql.DB, user_id int, session_id string, expires_at time.Time) error {
-	query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err := db.Exec(query, user_id, session_id, expires_at)
-	if err != nil {
-		return fmt.Errorf("%v", err)
-	}
+	retryConfig := retry.DatabaseWriteRetryConfig()
 
-	return nil
+	return retry.Try(ctx, retryConfig, func () error {
+		query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
+
+		_, err := db.Exec(query, user_id, session_id, expires_at)
+		if err != nil {
+			return fmt.Errorf("%v", err)
+		}
+
+		return nil		
+	})
 }
 
 func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
@@ -23,19 +32,26 @@ func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
 	if err != nil || cookie == nil {
 		return -1, "", false
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	query := `
+			SELECT 
+				s.user_id,
+				s.expires_at, 
+				u.username 
+			FROM sessions s 
+			INNER JOIN users u ON s.user_id = u.id 
+			WHERE session_id = ?
+		`
+	retryConfig := retry.DatabaseQueryRetryConfig()
 	var expiration time.Time
 	var user_id int
-	var username string
-	query := `
-		SELECT 
-			s.user_id,
-			s.expires_at, 
-			u.username 
-		FROM sessions s 
-		INNER JOIN users u ON s.user_id = u.id 
-		WHERE session_id = ?
-	`
-	err = db.QueryRow(query, cookie.Value).Scan(&user_id, &expiration, &username)
+	var username string	
+	err = retry.Try(ctx, retryConfig, func() error {
+		return db.QueryRow(query, cookie.Value).Scan(&user_id, &expiration, &username)		
+	})
+
 	if err != nil || expiration.Before(time.Now()) {
 		return -1, "", false
 	}
@@ -43,6 +59,12 @@ func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
 }
 
 func DeleteUserSession(db *sql.DB, userID int) error {
-	_, err := db.Exec(`DELETE FROM sessions WHERE user_id = ?;`, userID)
-	return err
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	retryConfig := retry.DatabaseWriteRetryConfig()
+	return retry.Try(ctx, retryConfig, func() error {
+		_, err := db.Exec(`DELETE FROM sessions WHERE user_id = ?;`, userID)
+		return err
+	})
 }
