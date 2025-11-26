@@ -29,20 +29,20 @@ func Connect() (*sql.DB, error) {
 	retryConfig := retry.InitDatabaseConnectionRetryConfig()
 	db, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.DB, error) {
 		db, err := sql.Open("mysql", dsn)
-		if err == nil {
-			return nil, fmt.Errorf("Failed open database connection with error: %v", err)
+		if err != nil {
+			return nil, fmt.Errorf("failed open database connection with error: %v", err)
 		}
 		err = db.Ping()
 		if err != nil {
 			db.Close()
-			return nil, fmt.Errorf("Failed ping database connection with error: %v", err)
+			return nil, fmt.Errorf("failed ping database connection with error: %v", err)
 		}
 
 		return db, nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed create database connection after maximum attempts with error: %v", err)
+		return nil, fmt.Errorf("failed create database connection after maximum attempts with error: %v", err)
 	}
 
 	log.Printf("Successfully create database connection")

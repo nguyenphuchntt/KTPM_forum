@@ -3,6 +3,9 @@ package models
 import (
 	"database/sql"
 	"fmt"
+	"forum/server/utils/retry"
+	"context"
+	"time"
 )
 
 type Comment struct {
@@ -17,85 +20,96 @@ type Comment struct {
 }
 
 func FetchCommentsByPostID(postID int, db *sql.DB) ([]Comment, error) {
-	var comments []Comment
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	query := `
-	SELECT
-		c.id,
-		c.user_id,
-		u.username,
-		c.content,
-		DATE_FORMAT(c.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-		(
-			SELECT
-				COUNT(*)
-			FROM
-				comment_reactions AS cr
-			WHERE
-				cr.comment_id = c.id
-				AND cr.reaction = 'like'
-		) AS likes_count,
-		(
-			SELECT
-				COUNT(*)
-			FROM
-				comment_reactions AS cr
-			WHERE
-				cr.comment_id = c.id
-				AND cr.reaction = 'dislike'
-		) AS dislikes_count
-	FROM
-		comments c
-	INNER JOIN users u 
-	ON c.user_id = u.id
-	WHERE
-		c.post_id = ?
-	ORDER BY
-		c.created_at DESC
-	`
+		SELECT
+			c.id,
+			c.user_id,
+			u.username,
+			c.content,
+			DATE_FORMAT(c.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
+			(
+				SELECT
+					COUNT(*)
+				FROM
+					comment_reactions AS cr
+				WHERE
+					cr.comment_id = c.id
+					AND cr.reaction = 'like'
+			) AS likes_count,
+			(
+				SELECT
+					COUNT(*)
+				FROM
+					comment_reactions AS cr
+				WHERE
+					cr.comment_id = c.id
+					AND cr.reaction = 'dislike'
+			) AS dislikes_count
+		FROM
+			comments c
+		INNER JOIN users u 
+		ON c.user_id = u.id
+		WHERE
+			c.post_id = ?
+		ORDER BY
+			c.created_at DESC
+		`
+	retryConfig := retry.DatabaseQueryRetryConfig()
 
-	rows, err := db.Query(query, postID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var comment Comment
-		err := rows.Scan(
-			&comment.ID,
-			&comment.UserID,
-			&comment.UserName,
-			&comment.Content,
-			&comment.CreatedAt,
-			&comment.Likes,
-			&comment.Dislikes,
-		)
+	return retry.TryWithResult(ctx, retryConfig, func() ([]Comment, error) {
+		var comments []Comment
+		
+		rows, err := db.Query(query, postID)
 		if err != nil {
 			return nil, err
 		}
+		defer rows.Close()
 
-		// Assign the post ID and format the created_at field
-		comment.PostID = postID
-		// comment.CreatedAt = utils.FormatTime(comment.CreatedAt)
+		for rows.Next() {
+			var comment Comment
+			err := rows.Scan(
+				&comment.ID,
+				&comment.UserID,
+				&comment.UserName,
+				&comment.Content,
+				&comment.CreatedAt,
+				&comment.Likes,
+				&comment.Dislikes,
+			)
+			if err != nil {
+				return nil, err
+			}
 
-		// Append the comment to the slice
-		comments = append(comments, comment)
-	}
+			// Assign the post ID and format the created_at field
+			comment.PostID = postID
+			// comment.CreatedAt = utils.FormatTime(comment.CreatedAt)
 
-	return comments, nil
+			// Append the comment to the slice
+			comments = append(comments, comment)
+		}
+
+		return comments, nil
+		})
 }
 
 func StoreComment(db *sql.DB, user_id, post_id int, content string) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	query := `INSERT INTO comments (user_id,post_id,content) VALUES (?,?,?)`
 
-	result, err := db.Exec(query, user_id, post_id, content)
-	if err != nil {
-		return 0, fmt.Errorf("%v", err)
-	}
+	retryConfig := retry.DatabaseWriteRetryConfig()
+	return retry.TryWithResult(ctx, retryConfig, func() (int64, error) {
+		result, err := db.Exec(query, user_id, post_id, content)
+		if err != nil {
+			return 0, fmt.Errorf("%v", err)
+		}
 
-	commentID, _ := result.LastInsertId()
+		commentID, _ := result.LastInsertId()
 
-	return commentID, nil
+		return commentID, nil		
+	})
 }
 
 func StoreCommentReaction(db *sql.DB, user_id, comment_id int, reaction string) (int64, error) {
