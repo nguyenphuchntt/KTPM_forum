@@ -1,9 +1,41 @@
+import { initDB, saveOfflineRequest, retryPendingRequests } from './indexedDB.js';
+
+initDB();
+
 window.addEventListener('resize', () => {
     if (document.body.clientWidth > 600) {
         document.querySelector('.mobile-nav').style.display = 'none';
     }
 })
 
+function showBanner(msg, color) {
+    const banner = document.createElement("div");
+    banner.textContent = msg;
+    Object.assign(banner.style, {
+        position: "fixed",
+        bottom: "20px",
+        left: "20px",
+        padding: "10px",
+        background: color,
+        color: "#fff",
+        borderRadius: "5px",
+        fontSize: "14px",
+        zIndex: 9999
+    });
+    document.body.appendChild(banner);
+    setTimeout(() => banner.remove(), 5000);
+}
+
+window.addEventListener('online', () => {
+    console.log("Network restored");
+    retryPendingRequests();
+    showBanner("Network restored", "green");
+});
+
+window.addEventListener('offline', () => {
+    console.log("Network lost");
+    showBanner("Network lost", "red");
+});
 
 function throttle(fn, delay) {
     let last = 0;
@@ -89,15 +121,18 @@ function commentreaction(commentid, reaction) {
 
 function addcomm(postId) {
     const content = document.getElementById("comment-content");
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/post/addcommentREQ", true);
-    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-    xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-            if (xhr.status === 200) {
-                const response = JSON.parse(xhr.responseText);
-                const comment = document.createElement("div")
-                comment.innerHTML = `
+    const data = `postid=${postId}&comment=${encodeURIComponent(content.value)}`;
+
+    if (navigator.onLine) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/post/addcommentREQ", true);
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    const response = JSON.parse(xhr.responseText);
+                    const comment = document.createElement("div")
+                    comment.innerHTML = `
                  <div class="comment">
             <div class="comment-header">
                 <p class="comment-user">`+ response.username + `</p>
@@ -116,28 +151,32 @@ function addcomm(postId) {
             <span style="color:red" id="commenterrorlogin`+ response.ID + `"></span>
         </div>
                 `
-                document.getElementsByClassName("comments")[0].prepend(comment)
-                document.getElementsByClassName("post-comments")[0].innerHTML = `<i class="fa-regular fa-comment"></i>` + response.commentscount
-                content.value = ""
-            } else if (xhr.status === 400) {
-                document.getElementById("errorlogin" + postId).innerText = `Invalid comment!`
-                setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
-                }, 1000);
-            } else if (xhr.status === 401) {
-                document.getElementById("errorlogin" + postId).innerText = `You must login first!`
-                setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
-                }, 1000);
-            } else {
-                document.getElementById("errorlogin" + postId).innerText = `Cannot add comment now, try again later!`
-                setTimeout(() => {
-                    document.getElementById("errorlogin" + postId).innerText = ``
-                }, 1000);
-            }
-        };
+                    document.getElementsByClassName("comments")[0].prepend(comment)
+                    document.getElementsByClassName("post-comments")[0].innerHTML = `<i class="fa-regular fa-comment"></i>` + response.commentscount
+                    content.value = ""
+                } else if (xhr.status === 400) {
+                    document.getElementById("errorlogin" + postId).innerText = `Invalid comment!`
+                    setTimeout(() => {
+                        document.getElementById("errorlogin" + postId).innerText = ``
+                    }, 1000);
+                } else if (xhr.status === 401) {
+                    document.getElementById("errorlogin" + postId).innerText = `You must login first!`
+                    setTimeout(() => {
+                        document.getElementById("errorlogin" + postId).innerText = ``
+                    }, 1000);
+                } else {
+                    document.getElementById("errorlogin" + postId).innerText = `Cannot add comment now, try again later!`
+                    setTimeout(() => {
+                        document.getElementById("errorlogin" + postId).innerText = ``
+                    }, 1000);
+                }
+            };
+        }
+        xhr.send(data);
+    } else {
+        saveOfflineRequest('/post/addcommentREQ', data);
+        content.value = '';
     }
-    xhr.send(`postid=${postId}&comment=${encodeURIComponent(content.value)}`);
 }
 
 const select = document.getElementById('categories-select');
@@ -212,6 +251,8 @@ function CreatPost() {
     const content = document.querySelector(".content")
     const categories = document.querySelector(".selected-categories")
     const logerror = document.querySelector(".errorarea")
+
+    if (!title || !content || !categories || !logerror) return;
     
     if (!title.value || !content.value || categories.childElementCount === 0) {
         logerror.innerText = 'Please fill in all fields and select at least one category.'; 
@@ -232,7 +273,7 @@ function CreatPost() {
     if (content.value.length > 3000) {
         logerror.innerText = 'Content is too long. Please keep it under 3000 characters.';
         setTimeout(() => {
-            logerror.innerText = '';
+            logerrorinnerText = '';
         }, 3000);
         return;
     }
@@ -242,44 +283,52 @@ function CreatPost() {
     Array.from(categories.getElementsByTagName('input')).forEach((x) => {
         cateris.push(x.value)
     })
-    const xml = new XMLHttpRequest();
-    xml.open("POST", "/post/createpost", true)
-    xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
 
-    xml.onreadystatechange = function () {
-        if (xml.readyState === 4) {
-            if (xml.status === 200) {
-                const btn = document.getElementById("create-post-btn")
-                document.getElementById("publish-post-icon").style.display = "none"
-                document.getElementById("publish-post-circle").style.display = "inline-block"
-                btn.disabled = true
-                btn.style.background = "grey"
-                btn.style.cursor = "not-allowed"
+    const data = `title=${encodeURIComponent(title.value)}&content=${encodeURIComponent(content.value)}&categories=${cateris}`;
+
+    if (navigator.onLine) {
+        const xml = new XMLHttpRequest();
+        xml.open("POST", "/post/createpost", true)
+        xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
+
+        xml.onreadystatechange = function () {
+            if (xml.readyState === 4) {
+                if (xml.status === 200) {
+                    const btn = document.getElementById("create-post-btn")
+                    document.getElementById("publish-post-icon").style.display = "none"
+                    document.getElementById("publish-post-circle").style.display = "inline-block"
+                    btn.disabled = true
+                    btn.style.background = "grey"
+                    btn.style.cursor = "not-allowed"
 
 
-                logerror.innerText = 'Post created successfully, redirect to home page in 2s ...'
-                logerror.style.color = "green"
-                setTimeout(() => {
-                    window.location.href = '/'
-                }, 2000)
+                    logerror.innerText = 'Post created successfully, redirect to home page in 2s ...'
+                    logerror.style.color = "green"
+                    setTimeout(() => {
+                        window.location.href = '/'
+                    }, 2000)
 
-            } else if (xml.status === 401) {
-                logerror.innerText = 'You are loged out, redirect to login page in 2s...'
-                setTimeout(() => {
-                    window.location.href = '/login'
-                }, 2000)
+                } else if (xml.status === 401) {
+                    logerror.innerText = 'You are loged out, redirect to login page in 2s...'
+                    setTimeout(() => {
+                        window.location.href = '/login'
+                    }, 2000)
 
-            } else {
-                logerror.innerText = 'Error: check your entries and try again!'
-                setTimeout(() => {
-                    logerror.innerText = ''
-                }, 1500)
+                } else {
+                    logerror.innerText = 'Error: check your entries and try again!'
+                    setTimeout(() => {
+                        logerror.innerText = ''
+                    }, 1500)
+                }
             }
         }
+        xml.send(data)
+    } else {
+        saveOfflineRequest('/post/createpost', data);
+        setTimeout(() => {
+            window.location.href = '/'
+        }, 2000);
     }
-
-    // Get form data
-    xml.send(`title=${encodeURIComponent(title.value)}&content=${encodeURIComponent(content.value)}&categories=${cateris}`)
 }
 
 
