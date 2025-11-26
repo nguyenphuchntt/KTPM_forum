@@ -1,10 +1,13 @@
 package models
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"forum/server/utils/retry"
 	"log"
 	"strings"
+	"time"
 )
 
 type Post struct {
@@ -29,7 +32,8 @@ type PostDetail struct {
 func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 	var posts []Post
 
-	// Query to fetch posts
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	query := `SELECT
 		p.id,
 		p.user_id,
@@ -79,7 +83,11 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, currentPage)
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		// Query to fetch posts
+		return db.Query(query, currentPage)
+	})
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -126,7 +134,8 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 	var post Post
 	post.ID = postID
 
-	// Query to fetch the post
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	query := `SELECT
 		p.user_id,
 		u.username,
@@ -160,21 +169,27 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		posts p
 		INNER JOIN users u ON p.user_id = u.id
 	WHERE p.id = ?`
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	_, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Row, error) {
+		// Query to fetch the post
 
-	// Use QueryRow for a single result
-	row := db.QueryRow(query, postID)
+		// Use QueryRow for a single result
+		row := db.QueryRow(query, postID)
 
-	// Scan the data into the Post struct
-	err := row.Scan(
-		&post.UserID,
-		&post.UserName,
-		&post.Title,
-		&post.Content,
-		&post.CreatedAt,
-		&post.Likes,
-		&post.Dislikes,
-		&post.Comments,
-		&post.CategoriesStr)
+		// Scan the data into the Post struct
+		err := row.Scan(
+			&post.UserID,
+			&post.UserName,
+			&post.Title,
+			&post.Content,
+			&post.CreatedAt,
+			&post.Likes,
+			&post.Dislikes,
+			&post.Comments,
+			&post.CategoriesStr)
+		return row, err
+	})
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return PostDetail{}, 404, fmt.Errorf("post not found: %w", err)
@@ -201,6 +216,9 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 
 func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, int, error) {
 	var posts []Post
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	query := `
 		SELECT
 			p.id,
@@ -253,7 +271,10 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			p.created_at
 		LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, categoryID, currentpage)
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return db.Query(query, categoryID, currentpage)
+	})
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -296,6 +317,9 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, int, error) {
 	var posts []Post
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	retryConfig := retry.DatabaseQueryRetryConfig()
 	// Query to fetch posts
 	query := `SELECT
 		p.id,
@@ -347,7 +371,9 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, user_id, currentPage)
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return db.Query(query, user_id, currentPage)
+	})
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -446,7 +472,12 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, user_id, currentPage)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return db.Query(query, user_id, currentPage)
+	})
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
