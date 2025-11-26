@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 
@@ -10,6 +9,7 @@ import (
 	"forum/server/middleware"
 	"forum/server/routes"
 	"forum/server/utils"
+	"forum/server/logger"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
@@ -17,10 +17,14 @@ import (
 )
 
 func main() {
+	// Initialize logger first
+	logger.Init()
+	
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("No .env file found, using on environment variables.")
+		logger.Log.Warn().Msg("No .env file found, using environment variables")
 	}
+	
 	// Check if running in Docker
 	isDocker := os.Getenv("BASE_PATH") != ""
 	if isDocker {
@@ -30,7 +34,7 @@ func main() {
 	// Connect to the database
 	db, err := config.Connect()
 	if err != nil {
-		log.Fatal("Database connection error:", err)
+		logger.Log.Fatal().Err(err).Msg("Database connection error")
 	}
 
 	// Handle database setup based on environment
@@ -38,9 +42,9 @@ func main() {
 		// Create the database schema and demo data
 		err := config.CreateDemoData(db)
 		if err != nil {
-			log.Fatalf("Error creating the database schema and demo data: %v", err)
+			logger.Log.Fatal().Err(err).Msg("Error creating the database schema and demo data")
 		}
-		log.Println("Database setup complete.")
+		logger.Log.Info().Msg("Database setup complete")
 	} else {
 		// Handle command-line flags for database setup
 		if len(os.Args) > 1 {
@@ -67,9 +71,9 @@ func main() {
 		Handler: handler,
 	}
 
-	log.Println("Server starting on http://localhost:8080")
-	log.Println("Rate limiting enabled: Global + Per-User/IP + Endpoint-specific")
+	logger.Log.Info().Msg("Server starting on http://localhost:8080")
+	logger.Log.Info().Msg("Rate limiting enabled: Global + Per-User/IP + Endpoint-specific")
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatal("Server error:", err)
+		logger.Log.Fatal().Err(err).Msg("Server error")
 	}
 }
