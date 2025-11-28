@@ -4,3 +4,5 @@ k6-tests/
 .exe
 .idea/
 cmd/.env
+.env
+.env.example
