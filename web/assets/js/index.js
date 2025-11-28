@@ -1,3 +1,5 @@
+import UploadManager from './upload_manager.js';
+
 window.addEventListener("resize", () => {
   if (document.body.clientWidth > 600) {
     document.querySelector(".mobile-nav").style.display = "none";
@@ -15,9 +17,9 @@ function throttle(fn, delay) {
   };
 }
 
-const addcomment = throttle(addcomm, 5000);
+window.addcomment = throttle(addcomm, 5000);
 
-function postreaction(postId, reaction) {
+window.postreaction = function (postId, reaction) {
   document.getElementById("errorlogin" + postId).innerText = ``;
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/post/postreaction", true);
@@ -56,7 +58,8 @@ function postreaction(postId, reaction) {
   };
   xhr.send(`reaction=${reaction}&post_id=${postId}`);
 }
-function commentreaction(commentid, reaction) {
+
+window.commentreaction = function (commentid, reaction) {
   document.getElementById("commenterrorlogin" + commentid).innerText = ``;
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/post/commentreaction", true);
@@ -184,6 +187,7 @@ function addcomm(postId) {
   };
   xhr.send(`postid=${postId}&comment=${encodeURIComponent(content.value)}`);
 }
+window.addcomm = addcomm;
 
 const select = document.getElementById("categories-select");
 if (select) {
@@ -236,7 +240,7 @@ if (select) {
   });
 }
 
-async function pagination(dir, data) {
+window.pagination = async function (dir, data) {
   const path = window.location.pathname;
   if (dir === "next" && data) {
     const page = +document.querySelector(".currentpage").innerText + 1;
@@ -252,11 +256,13 @@ async function pagination(dir, data) {
   }
 }
 
-function CreatPost() {
+window.CreatPost = async function () {
   const title = document.querySelector(".create-post-title");
   const content = document.querySelector(".content");
   const categories = document.querySelector(".selected-categories");
   const logerror = document.querySelector(".errorarea");
+  const btn = document.getElementById("create-post-btn");
+  const imageInput = document.getElementById("post-image");
 
   if (!title.value || !content.value || categories.childElementCount === 0) {
     logerror.innerText =
@@ -285,31 +291,99 @@ function CreatPost() {
     return;
   }
 
+  // Disable button and show spinner
+  document.getElementById("publish-post-icon").style.display = "none";
+  document.getElementById("publish-post-circle").style.display = "inline-block";
+  btn.disabled = true;
+  btn.style.background = "grey";
+  btn.style.cursor = "not-allowed";
+
+  let imageURL = "";
+  if (imageInput.files.length > 0) {
+    const file = imageInput.files[0];
+    const uploadManager = new UploadManager();
+
+    // Update UI with progress
+    uploadManager.setProgressCallback((percent, message) => {
+      logerror.innerText = `${message} (${percent}%)`;
+      logerror.style.color = "blue";
+    });
+
+    try {
+      const result = await uploadManager.upload(file);
+      imageURL = result.imageURL;
+      logerror.innerText = "Upload ảnh thành công!";
+      logerror.style.color = "green";
+    } catch (error) {
+      logerror.innerText = `Lỗi upload: ${error.message}`;
+      logerror.style.color = "red";
+
+      // Reset button
+      document.getElementById("publish-post-icon").style.display = "inline-block";
+      document.getElementById("publish-post-circle").style.display = "none";
+      btn.disabled = false;
+      btn.style.background = "";
+      btn.style.cursor = "pointer";
+      return;
+    }
+  }
+
   let cateris = new Array();
   Array.from(categories.getElementsByTagName("input")).forEach((x) => {
     cateris.push(x.value);
   });
+
   const xml = new XMLHttpRequest();
   xml.open("POST", "/post/createpost", true);
-  xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  const formData = new FormData();
+  formData.append("title", title.value);
+  formData.append("content", content.value);
+  cateris.forEach(catID => formData.append("categories", catID));
+
+  if (imageURL) {
+    formData.append("image_url", imageURL);
+  }
 
   xml.onreadystatechange = function () {
     if (xml.readyState === 4) {
       if (xml.status === 200) {
-        const btn = document.getElementById("create-post-btn");
-        document.getElementById("publish-post-icon").style.display = "none";
-        document.getElementById("publish-post-circle").style.display =
-          "inline-block";
-        btn.disabled = true;
-        btn.style.background = "grey";
-        btn.style.cursor = "not-allowed";
+        if (imageURL) {
+          logerror.innerText = "Post created! Verifying image availability...";
+          logerror.style.color = "blue";
 
-        logerror.innerText =
-          "Post created successfully, redirect to home page in 2s ...";
-        logerror.style.color = "green";
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 2000);
+          // Poll for image availability
+          let attempts = 0;
+          const maxAttempts = 20; // 10 seconds
+
+          const checkImage = setInterval(() => {
+            attempts++;
+            fetch(imageURL, { method: 'HEAD' })
+              .then(res => {
+                if (res.ok || attempts >= maxAttempts) {
+                  clearInterval(checkImage);
+                  logerror.innerText = "Image ready! Redirecting...";
+                  logerror.style.color = "green";
+                  setTimeout(() => {
+                    window.location.href = "/";
+                  }, 500);
+                }
+              })
+              .catch(() => {
+                if (attempts >= maxAttempts) {
+                  clearInterval(checkImage);
+                  window.location.href = "/";
+                }
+              });
+          }, 500);
+        } else {
+          logerror.innerText =
+            "Post created successfully, redirect to home page in 2s ...";
+          logerror.style.color = "green";
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 2000);
+        }
       } else if (xml.status === 401) {
         logerror.innerText =
           "You are loged out, redirect to login page in 2s...";
@@ -321,19 +395,22 @@ function CreatPost() {
         setTimeout(() => {
           logerror.innerText = "";
         }, 1500);
+
+        // Reset button on error
+        document.getElementById("publish-post-icon").style.display = "inline-block";
+        document.getElementById("publish-post-circle").style.display = "none";
+        btn.disabled = false;
+        btn.style.background = "";
+        btn.style.cursor = "pointer";
       }
     }
   };
 
   // Get form data
-  xml.send(
-    `title=${encodeURIComponent(title.value)}&content=${encodeURIComponent(
-      content.value
-    )}&categories=${cateris}`
-  );
+  xml.send(formData);
 }
 
-function register() {
+window.register = function () {
   const email = document.querySelector("#email");
   const username = document.querySelector("#username");
   const password = document.querySelector("#password");
@@ -391,7 +468,7 @@ function register() {
   );
 }
 
-function login() {
+window.login = function () {
   const username = document.querySelector("#username");
   const password = document.querySelector("#password");
 
@@ -451,34 +528,12 @@ function login() {
   );
 }
 
-const displayMobileNav = (e) => {
+window.displayMobileNav = (e) => {
   const nav = document.querySelector(".mobile-nav");
   nav.style.display = "block";
 };
 
-const closeMobileNav = (e) => {
+window.closeMobileNav = (e) => {
   const nav = document.querySelector(".mobile-nav");
   nav.style.display = "none";
 };
-
-// const formatTime = (timeStr) => {
-//     // Parse the input time string
-//     const date = new Date(timeStr);
-
-//     return date.toLocaleString('default', {
-//         hour: '2-digit',
-//         minute: '2-digit',
-//         day: '2-digit',
-//         month: '2-digit',
-//         year: 'numeric',
-//     }).replace(',', ' ')
-// }
-
-// document.addEventListener("DOMContentLoaded", () => {
-//     document.querySelectorAll("[data-timestamp]").forEach((element) => {
-//         const time = element.getAttribute("data-timestamp");
-//         if (time) {
-//             element.textContent = formatTime(time);
-//         }
-//     });
-// });

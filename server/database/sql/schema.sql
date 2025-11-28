@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS posts (
     user_id BIGINT NOT NULL,
     title VARCHAR(500) NOT NULL,
     content TEXT NOT NULL,
+    image_path VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id (user_id),

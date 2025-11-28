@@ -170,20 +170,11 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cacheKey := "post_" + strconv.Itoa(postID)
-
-	posts, found := getPostFromCache(cacheKey)
-	if found {
-		if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, posts[0], valid, username); err != nil {
-			log.Println("Error rendering template:", err)
-			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
-			return
-		}
-		return
-	}
-
-	// If cache miss
-	log.Println("Cache miss:", cacheKey)
+	// Cache logic removed to fix 500 error (type mismatch between Post and PostDetail)
+	// and to ensure comments are always fresh.
+	// cacheKey := "post_" + strconv.Itoa(postID)
+	// posts, found := getPostFromCache(cacheKey)
+	// if found { ... }
 
 	postDetail, statusCode, err := models.FetchPost(db, postID)
 	if err != nil {
@@ -192,9 +183,9 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if err == nil && postDetail.Post.ID != 0 {
-		cache.AppCache.Set(cacheKey, []models.Post{postDetail.Post}, config.CacheTTL)
-	}
+	// if err == nil && postDetail.Post.ID != 0 {
+	// 	cache.AppCache.Set(cacheKey, []models.Post{postDetail.Post}, config.CacheTTL)
+	// }
 
 	err = utils.RenderTemplate(db, w, r, "post", statusCode, postDetail, valid, username)
 	if err != nil {
@@ -238,7 +229,9 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
+	// Parse multipart form
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10 MB limit
+		log.Println("Error parsing multipart form:", err)
 		w.WriteHeader(400)
 		return
 	}
@@ -246,13 +239,16 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	title := r.FormValue("title")
 	content := r.FormValue("content")
 	catids := r.Form["categories"]
-
-	catids = strings.Split(catids[0], ",")
+	
+	// Handle categories (might be comma separated string in one element or multiple elements)
+	if len(catids) > 0 && strings.Contains(catids[0], ",") {
+		catids = strings.Split(catids[0], ",")
+	}
 
 	title = html.EscapeString(title)
 	content = html.EscapeString(content)
 
-	if catids == nil || strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
+	if len(catids) == 0 || strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
 		w.WriteHeader(400)
 		return
 	}
@@ -273,8 +269,35 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	pid, err := models.StorePost(db, user_id, title, content)
+	// Handle Image Upload
+	var imagePath string
+	
+	// Check for pre-uploaded image URL (from Azure)
+	imageUrl := r.FormValue("image_url")
+	if imageUrl != "" {
+		imagePath = imageUrl
+	} else {
+		// Fallback to local upload
+		file, header, err := r.FormFile("image")
+		if err == nil {
+			defer file.Close()
+			storage := utils.NewLocalStorage(config.BasePath + "web/assets/uploads")
+			imagePath, err = storage.Save(file, header)
+			if err != nil {
+				log.Println("Error saving image:", err)
+				w.WriteHeader(500)
+				return
+			}
+		} else if err != http.ErrMissingFile {
+			log.Println("Error retrieving image:", err)
+			w.WriteHeader(400)
+			return
+		}
+	}
+
+	pid, err := models.StorePost(db, user_id, title, content, imagePath)
 	if err != nil {
+		log.Println("Error storing post:", err)
 		w.WriteHeader(400)
 		return
 	}
