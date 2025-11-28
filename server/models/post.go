@@ -19,6 +19,7 @@ type Post struct {
 	Comments      int
 	CategoriesStr string
 	Categories    []string
+	ImagePath     string
 }
 
 type PostDetail struct {
@@ -36,6 +37,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 		u.username,
 		p.title,
 		p.content,
+		p.image_path,
 		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
@@ -89,12 +91,14 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 	// Iterate through the rows
 	for rows.Next() {
 		var post Post
+		var imagePath sql.NullString
 		// Scan the data into the Post struct
 		err := rows.Scan(&post.ID,
 			&post.UserID,
 			&post.UserName,
 			&post.Title,
 			&post.Content,
+			&imagePath,
 			&post.CreatedAt,
 			&post.Likes,
 			&post.Dislikes,
@@ -104,6 +108,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
+		post.ImagePath = imagePath.String
 		// it came from the  database as "technology,sports...", so we need to split it
 		post.Categories = strings.Split(post.CategoriesStr, ",")
 
@@ -132,6 +137,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		u.username,
 		p.title,
 		p.content,
+		p.image_path,
 		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT COUNT(*)
@@ -164,12 +170,14 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 	// Use QueryRow for a single result
 	row := db.QueryRow(query, postID)
 
+	var imagePath sql.NullString
 	// Scan the data into the Post struct
 	err := row.Scan(
 		&post.UserID,
 		&post.UserName,
 		&post.Title,
 		&post.Content,
+		&imagePath,
 		&post.CreatedAt,
 		&post.Likes,
 		&post.Dislikes,
@@ -182,6 +190,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		log.Println("Error scanning row:", err)
 		return PostDetail{}, 500, err
 	}
+	post.ImagePath = imagePath.String
 
 	// Process categories
 	post.Categories = strings.Split(post.CategoriesStr, ",")
@@ -208,6 +217,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			u.username,
 			p.title,
 			p.content,
+			p.image_path,
 			DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 			(
 				SELECT
@@ -261,11 +271,13 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 	defer rows.Close()
 	for rows.Next() {
 		var post Post
+		var imagePath sql.NullString
 		err := rows.Scan(&post.ID,
 			&post.UserID,
 			&post.UserName,
 			&post.Title,
 			&post.Content,
+			&imagePath,
 			&post.CreatedAt,
 			&post.Likes,
 			&post.Dislikes,
@@ -275,6 +287,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
+		post.ImagePath = imagePath.String
 
 		// it came from the  database as "technology,sports...", so we need to split it
 		post.Categories = strings.Split(post.CategoriesStr, ",")
@@ -303,6 +316,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		u.username,
 		p.title,
 		p.content,
+		p.image_path,
 		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
@@ -312,7 +326,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 			WHERE
 				pr.post_id = p.id
 				AND pr.reaction = 'like'
-		) AS likes_count,
+			) AS likes_count,
 		(
 			SELECT
 				COUNT(*)
@@ -357,12 +371,14 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 	// Iterate through the rows
 	for rows.Next() {
 		var post Post
+		var imagePath sql.NullString
 		// Scan the data into the Post struct
 		err := rows.Scan(&post.ID,
 			&post.UserID,
 			&post.UserName,
 			&post.Title,
 			&post.Content,
+			&imagePath,
 			&post.CreatedAt,
 			&post.Likes,
 			&post.Dislikes,
@@ -372,6 +388,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
+		post.ImagePath = imagePath.String
 		// it came from the  database as "technology,sports...", so we need to split it
 		post.Categories = strings.Split(post.CategoriesStr, ",")
 
@@ -401,6 +418,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 		u.username,
 		p.title,
 		p.content,
+		p.image_path,
 		DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
 		(
 			SELECT
@@ -456,12 +474,14 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 	// Iterate through the rows
 	for rows.Next() {
 		var post Post
+		var imagePath sql.NullString
 		// Scan the data into the Post struct
 		err := rows.Scan(&post.ID,
 			&post.UserID,
 			&post.UserName,
 			&post.Title,
 			&post.Content,
+			&imagePath,
 			&post.CreatedAt,
 			&post.Likes,
 			&post.Dislikes,
@@ -471,6 +491,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
+		post.ImagePath = imagePath.String
 		// it came from the  database as "technology,sports...", so we need to split it
 		post.Categories = strings.Split(post.CategoriesStr, ",")
 
@@ -490,10 +511,10 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 	return posts, 200, nil
 }
 
-func StorePost(db *sql.DB, user_id int, title, content string) (int64, error) {
-	query := `INSERT INTO posts (user_id,title,content) VALUES (?,?,?)`
+func StorePost(db *sql.DB, user_id int, title, content, imagePath string) (int64, error) {
+	query := `INSERT INTO posts (user_id,title,content,image_path) VALUES (?,?,?,?)`
 
-	result, err := db.Exec(query, user_id, title, content)
+	result, err := db.Exec(query, user_id, title, content, imagePath)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}

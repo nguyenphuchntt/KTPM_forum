@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"os"
 
+	"forum/server/cloud"
 	"forum/server/config"
+	"forum/server/controllers"
 	"forum/server/middleware"
 	"forum/server/routes"
 	"forum/server/utils"
+	"forum/server/workers"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
@@ -31,6 +34,34 @@ func main() {
 	db, err := config.Connect()
 	if err != nil {
 		log.Fatal("Database connection error:", err)
+	}
+
+	// Initialize Azure Storage (for image uploads)
+	connectionString := os.Getenv("AZURE_STORAGE_CONNECTION_STRING")
+	var uploadGatekeeper *middleware.UploadGatekeeper
+	var webhookController *controllers.WebhookController
+	
+	if connectionString != "" {
+		azureStorage, err := cloud.NewAzureStorage(connectionString)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Azure Storage: %v", err)
+			log.Println("Image upload will not be available")
+		} else {
+			log.Printf("✓ Azure Storage connected: %s", azureStorage.GetAccountName())
+			
+			// Auto-configure CORS and Public Access
+			cloud.ConfigureAzureStorage(connectionString, os.Getenv("AZURE_PRODUCTION_CONTAINER"))
+			
+			uploadGatekeeper = middleware.NewUploadGatekeeper(azureStorage, db)
+			webhookController = controllers.NewWebhookController(azureStorage)
+		}
+	} else {
+		log.Println("Warning: AZURE_STORAGE_CONNECTION_STRING not set, image upload disabled")
+	}
+
+	// Start Quarantine Watcher (for local dev automation)
+	if os.Getenv("ENABLE_QUARANTINE_WATCHER") == "true" && connectionString != "" {
+		workers.StartQuarantineWatcher(connectionString)
 	}
 
 	// Handle database setup based on environment
@@ -60,7 +91,7 @@ func main() {
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
 	
 	// Start the HTTP server with rate limiting
-	handler := rateLimitMiddleware.Limit(routes.Routes(db))
+	handler := rateLimitMiddleware.Limit(routes.Routes(db, uploadGatekeeper, webhookController))
 	
 	server := http.Server{
 		Addr:    ":8080",

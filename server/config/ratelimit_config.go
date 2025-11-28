@@ -28,6 +28,7 @@ type RateLimitConfig struct {
 	PostsPerHour              int
 	CommentsPerHour           int
 	ReactionsPerMinute        int
+	UploadRequestsPerMinute   int
 
 	// Feature flags
 	EnableRateLimit         bool
@@ -56,6 +57,7 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 10),
 	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 30),
 	ReactionsPerMinute:        getEnvInt("REACTIONS_PER_MINUTE", 60),
+	UploadRequestsPerMinute:   getEnvInt("UPLOAD_REQUESTS_PER_MINUTE", 5),
 
 	// Feature flags
 		EnableRateLimit:        getEnvBool("ENABLE_RATE_LIMIT", true),

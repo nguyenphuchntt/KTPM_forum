@@ -172,6 +172,7 @@ type EndpointRateLimiter struct {
 	postLimiter     *ratelimit.WindowRateLimiter
 	commentLimiter  *ratelimit.WindowRateLimiter
 	reactionLimiter *ratelimit.WindowRateLimiter
+	uploadLimiter   *ratelimit.WindowRateLimiter
 	config          *config.RateLimitConfig
 	db              *sql.DB
 }
@@ -197,6 +198,9 @@ func NewEndpointRateLimiter(db *sql.DB, cfg *config.RateLimitConfig) *EndpointRa
 
 		// Reactions: configurable reactions per minute
 		reactionLimiter: ratelimit.NewWindowRateLimiter(cfg.ReactionsPerMinute, 1*time.Minute),
+
+		// Upload: configurable uploads per minute
+		uploadLimiter: ratelimit.NewWindowRateLimiter(cfg.UploadRequestsPerMinute, 1*time.Minute),
 
 		config: cfg,
 		db:     db,
@@ -293,6 +297,32 @@ func (e *EndpointRateLimiter) LimitReaction(next http.HandlerFunc, db *sql.DB) h
 
 		next(w, r)
 	}
+}
+
+// LimitUpload rate limits file uploads
+func (e *EndpointRateLimiter) LimitUpload(next http.Handler, db *sql.DB) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Use IP for upload limiting to prevent spam from same source
+		// (Even if authenticated, we want to limit by source IP for uploads as an extra layer)
+		// Or better: use UserID if available, else IP.
+		
+		var key string
+		userID, _, valid := models.ValidSession(r, db)
+		if valid {
+			key = fmt.Sprintf("upload:user:%d", userID)
+		} else {
+			ip := getClientIP(r)
+			key = "upload:ip:" + ip
+		}
+
+		if !e.uploadLimiter.Allow(key) {
+			log.Printf("UPLOAD_RATE_LIMIT | Key: %s", key)
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Helper function to get client IP

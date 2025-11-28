@@ -23,6 +23,10 @@
             <label>Content* <span class="max-char">(max: 1000 char)</span></label>
             <textarea class="content" name="content" placeholder="What's on your mind?"></textarea>
         </div>
+        <div class="create-post-fields">
+            <label>Image</label>
+            <input type="file" id="post-image" name="image" accept="image/*">
+        </div>
         <span class="errorarea"></span>
         <button id="create-post-btn" onclick="CreatPost()">
             Publish Post

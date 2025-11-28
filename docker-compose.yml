@@ -12,6 +12,23 @@ services:
       - DB_HOST=db
       - DB_PORT=3306
       - DB_NAME=forum_db
+      - BASE_PATH=/app/
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+      - AZURE_QUARANTINE_CONTAINER=${AZURE_QUARANTINE_CONTAINER:-quarantine-container}
+      - AZURE_PRODUCTION_CONTAINER=${AZURE_PRODUCTION_CONTAINER:-post-images}
+      - GLOBAL_RPS=${GLOBAL_RPS}
+      - GLOBAL_BURST=${GLOBAL_BURST}
+      - USER_RPM=${USER_RPM}
+      - IP_RPM=${IP_RPM}
+      - LOGIN_ATTEMPTS=${LOGIN_ATTEMPTS}
+      - LOGIN_WINDOW_MINUTES=${LOGIN_WINDOW_MINUTES}
+      - REGISTER_ATTEMPTS=${REGISTER_ATTEMPTS}
+      - REGISTER_WINDOW_MINUTES=${REGISTER_WINDOW_MINUTES}
+      - POSTS_PER_HOUR=${POSTS_PER_HOUR}
+      - COMMENTS_PER_HOUR=${COMMENTS_PER_HOUR}
+      - REACTIONS_PER_MINUTE=${REACTIONS_PER_MINUTE}
+      - UPLOAD_REQUESTS_PER_MINUTE=${UPLOAD_REQUESTS_PER_MINUTE}
+      - ENABLE_QUARANTINE_WATCHER=true
     depends_on:
       db:
         condition: service_healthy
@@ -25,7 +42,7 @@ services:
       MYSQL_USER: user
       MYSQL_PASSWORD: password
     ports:
-      - "3307:3306"  # Map to host port 3307 instead
+      - "3307:3306"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
