@@ -27,12 +27,6 @@ type RateLimitConfig struct {
 	RegisterWindowSize        time.Duration
 	PostsPerHour              int
 	CommentsPerHour           int
-	ReactionsPerMinute        int
-
-	// Feature flags
-	EnableRateLimit         bool
-	EnableEndpointLimits    bool
-	LogRateLimitViolations  bool
 }
 
 // DefaultRateLimitConfig returns default rate limiting configuration
@@ -49,18 +43,12 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		IPWindowSize:          1 * time.Minute,
 
 	// Endpoint-specific limits
-	LoginAttemptsPerWindow:    getEnvInt("LOGIN_ATTEMPTS", 5),
-	LoginWindowSize:           time.Duration(getEnvInt("LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
-	RegisterAttemptsPerWindow: getEnvInt("REGISTER_ATTEMPTS", 3),
-	RegisterWindowSize:        time.Duration(getEnvInt("REGISTER_WINDOW_MINUTES", 60)) * time.Minute,
-	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 10),
-	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 30),
-	ReactionsPerMinute:        getEnvInt("REACTIONS_PER_MINUTE", 60),
-
-	// Feature flags
-		EnableRateLimit:        getEnvBool("ENABLE_RATE_LIMIT", true),
-		EnableEndpointLimits:   getEnvBool("ENABLE_ENDPOINT_LIMITS", true),
-		LogRateLimitViolations: getEnvBool("LOG_RATE_LIMIT_VIOLATIONS", true),
+	LoginAttemptsPerWindow:    getEnvInt("LOGIN_ATTEMPTS", 20),
+	LoginWindowSize:           time.Duration(getEnvInt("LOGIN_WINDOW_MINUTES", 10)) * time.Minute,
+	RegisterAttemptsPerWindow: getEnvInt("REGISTER_ATTEMPTS", 5),
+	RegisterWindowSize:        time.Duration(getEnvInt("REGISTER_WINDOW_MINUTES", 10)) * time.Minute,
+	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 50),
+	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 100),
 	}
 }
 

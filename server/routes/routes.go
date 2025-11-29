@@ -25,6 +25,7 @@ func Routes(db *sql.DB) http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		controllers.IndexPosts(w, r, db)
 	})
+	
 	mux.HandleFunc("/category/{id}", func(w http.ResponseWriter, r *http.Request) {
 		controllers.IndexPostsByCategory(w, r, db)
 	})
@@ -58,17 +59,13 @@ func Routes(db *sql.DB) http.Handler {
 	)
 
 	// Rate limited reactions
-	mux.HandleFunc("/post/postreaction", 
-		endpointLimiter.LimitReaction(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/post/postreaction", func(w http.ResponseWriter, r *http.Request) {
 			controllers.ReactToPost(w, r, db)
-		}, db),
-	)
+		})
 
-	mux.HandleFunc("/post/commentreaction", 
-		endpointLimiter.LimitReaction(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/post/commentreaction", func(w http.ResponseWriter, r *http.Request) {
 			controllers.ReactToComment(w, r, db)
-		}, db),
-	)
+		})
 
 	// Rate limited login
 	mux.HandleFunc("/signin", 
@@ -91,8 +88,6 @@ func Routes(db *sql.DB) http.Handler {
 	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		controllers.Logout(w, r, db)
 	})
-
-
 
 
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
