@@ -83,6 +83,89 @@ var (
         },
         []string{"query_type"},
     )
+
+    // Runtime Metrics
+    GoGoroutines = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_go_goroutines",
+            Help: "Number of goroutines that currently exist",
+        },
+    )
+    
+    GoMemoryHeapAlloc = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_go_memory_heap_alloc_bytes",
+            Help: "Bytes allocated and still in use (heap)",
+        },
+    )
+    
+    GoMemoryHeapInuse = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_go_memory_heap_inuse_bytes",
+            Help: "Bytes in in-use spans",
+        },
+    )
+    
+    GoMemoryHeapSys = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_go_memory_heap_sys_bytes",
+            Help: "Bytes obtained from system for heap",
+        },
+    )
+    
+    GoMemoryStackInuse = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_go_memory_stack_inuse_bytes",
+            Help: "Bytes in stack spans",
+        },
+    )
+    
+    GoGCPauseSeconds = promauto.NewHistogram(
+        prometheus.HistogramOpts{
+            Name: "forum_go_gc_pause_seconds",
+            Help: "GC pause duration in seconds",
+            Buckets: []float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+        },
+    )
+    
+    GoGCCount = promauto.NewCounter(
+        prometheus.CounterOpts{
+            Name: "forum_go_gc_count_total",
+            Help: "Total number of GC cycles",
+        },
+    )
+
+    // Uptime and Availability Metrics
+    ProcessStartTimeSeconds = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_process_start_time_seconds",
+            Help: "Start time of the process since unix epoch in seconds",
+        },
+    )
+    
+    UptimeSeconds = promauto.NewCounter(
+        prometheus.CounterOpts{
+            Name: "forum_uptime_seconds_total",
+            Help: "Total uptime of the application in seconds",
+        },
+    )
+
+    // In-flight Requests
+    HttpInFlightRequests = promauto.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "forum_http_in_flight_requests",
+            Help: "Current number of HTTP requests being processed",
+        },
+    )
+
+    // Rate Limit Metrics
+    RateLimitDropsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "forum_rate_limit_drops_total",
+            Help: "Total number of requests dropped due to rate limiting",
+        },
+        []string{"endpoint", "limiter_type"},
+    )
 )
 
 func NormalizeEndpoint(path string) string {

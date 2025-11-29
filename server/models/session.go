@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"forum/server/database"
 )
 
 func StoreSession(db *sql.DB, user_id int, session_id string, expires_at time.Time) error {
 	query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
 
-	_, err := db.Exec(query, user_id, session_id, expires_at)
+	_, err := database.ExecWithMetrics(db, "insert_session", query, user_id, session_id, expires_at)
 	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
@@ -35,7 +37,9 @@ func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
 		INNER JOIN users u ON s.user_id = u.id 
 		WHERE session_id = ?
 	`
-	err = db.QueryRow(query, cookie.Value).Scan(&user_id, &expiration, &username)
+	row, recordError := database.QueryRowWithMetricsAndError(db, "select_session", query, cookie.Value)
+	err = row.Scan(&user_id, &expiration, &username)
+	recordError(err)
 	if err != nil || expiration.Before(time.Now()) {
 		return -1, "", false
 	}
@@ -43,6 +47,6 @@ func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
 }
 
 func DeleteUserSession(db *sql.DB, userID int) error {
-	_, err := db.Exec(`DELETE FROM sessions WHERE user_id = ?;`, userID)
+	_, err := database.ExecWithMetrics(db, "delete_session", `DELETE FROM sessions WHERE user_id = ?;`, userID)
 	return err
 }
