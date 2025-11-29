@@ -67,6 +67,9 @@ func main() {
 	// Initialize global rate limiting middleware
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
 	
+	// Start collecting DB connection stats
+	go collectDBStats(db)
+	
 	// Start the HTTP server with rate limiting
 	handler := middleware.MetricsMiddleware(rateLimitMiddleware.Limit(routes.Routes(db)))
 	

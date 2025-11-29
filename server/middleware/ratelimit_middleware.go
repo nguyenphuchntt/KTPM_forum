@@ -171,7 +171,6 @@ type EndpointRateLimiter struct {
 	registerLimiter *ratelimit.WindowRateLimiter
 	postLimiter     *ratelimit.WindowRateLimiter
 	commentLimiter  *ratelimit.WindowRateLimiter
-	reactionLimiter *ratelimit.WindowRateLimiter
 	config          *config.RateLimitConfig
 	db              *sql.DB
 }
@@ -194,9 +193,6 @@ func NewEndpointRateLimiter(db *sql.DB, cfg *config.RateLimitConfig) *EndpointRa
 
 		// Create comment: configurable comments per hour
 		commentLimiter: ratelimit.NewWindowRateLimiter(cfg.CommentsPerHour, 1*time.Hour),
-
-		// Reactions: configurable reactions per minute
-		reactionLimiter: ratelimit.NewWindowRateLimiter(cfg.ReactionsPerMinute, 1*time.Minute),
 
 		config: cfg,
 		db:     db,
@@ -267,26 +263,6 @@ func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.
 		key := fmt.Sprintf("comment:%d", userID)
 		if !e.commentLimiter.Allow(key) {
 			log.Printf("COMMENT_RATE_LIMIT | User: %d", userID)
-			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-
-		next(w, r)
-	}
-}
-
-// LimitReaction rate limits reactions (likes/dislikes)
-func (e *EndpointRateLimiter) LimitReaction(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, valid := models.ValidSession(r, db)
-		if !valid {
-			next(w, r)
-			return
-		}
-
-		key := fmt.Sprintf("reaction:%d", userID)
-		if !e.reactionLimiter.Allow(key) {
-			log.Printf("REACTION_RATE_LIMIT | User: %d", userID)
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
