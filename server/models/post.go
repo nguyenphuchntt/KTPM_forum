@@ -177,13 +177,14 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		posts p
 		INNER JOIN users u ON p.user_id = u.id
 	WHERE p.id = ?`
+	
+	var imagePath sql.NullString
 	retryConfig := retry.DatabaseQueryRetryConfig()
 	_, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Row, error) {
 		// Query to fetch the post
 		// Use QueryRow for a single result
 		row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail", query, postID)
 
-		var imagePath sql.NullString
 		// Scan the data into the Post struct
 		err := row.Scan(
 			&post.UserID,
