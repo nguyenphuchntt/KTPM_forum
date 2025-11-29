@@ -4,6 +4,8 @@ import (
 	"forum/server/config"
 	"log"
 	"time"
+	"forum/server/metrics"
+
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -36,6 +38,7 @@ func (cache *Cache) Set(key string, data interface{}, ttl time.Duration) {
 	}
 
 	cache.lru.Add(key, item)
+	metrics.CacheSize.Set(float64(cache.lru.Len()))
 }
 
 // GET
@@ -43,14 +46,17 @@ func (cache *Cache) Get(key string) (interface{}, bool) {
 	item, found := cache.lru.Get(key)
 
 	if !found {
+		metrics.CacheMissesTotal.Inc()
 		return nil, false
 	}
 
 	if IsExpired(item) {
 		cache.Delete(key)
+		metrics.CacheMissesTotal.Inc()
 		return nil, false
 	}
 
+	metrics.CacheHitsTotal.Inc()
 	return item.Data, true
 }
 
@@ -58,6 +64,7 @@ func (cache *Cache) Get(key string) (interface{}, bool) {
 func (cache *Cache) Delete(key string) {
 	log.Println("Deleting cache key:", key)
 	cache.lru.Remove(key)
+	metrics.CacheSize.Set(float64(cache.lru.Len()))
 }
 
 var AppCache = New()

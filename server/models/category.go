@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"forum/server/database"
 )
 
 type Category struct {
@@ -29,7 +31,7 @@ func FetchCategories(db *sql.DB) ([]Category, error) {
 		FROM categories c
 		ORDER BY posts_count DESC;
 	`
-	rows, err := db.Query(query)
+	rows, err := database.QueryWithMetrics(db, "select_categories", query)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,7 @@ func CheckCategories(db *sql.DB, ids []int) error {
 		args[i] = id
 	}
 
-	rows, err := db.Query(query, args...)
+	rows, err := database.QueryWithMetrics(db, "check_categories", query, args...)
 	if err != nil {
 		return err
 	}

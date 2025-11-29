@@ -1,9 +1,9 @@
-version: '3.8'
 services:
   app:
     build: .
     ports:
-        - "8080:8080"
+      - "8080:8080"
+      - "9090:9090"
     environment:
       - DB_DRIVER=mysql
       - DB_SOURCE=user:password@tcp(db:3306)/forum_db?parseTime=true
@@ -12,6 +12,8 @@ services:
       - DB_HOST=db
       - DB_PORT=3306
       - DB_NAME=forum_db
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
       - BASE_PATH=/app/
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
       - AZURE_QUARANTINE_CONTAINER=${AZURE_QUARANTINE_CONTAINER:-quarantine-container}
@@ -42,15 +44,42 @@ services:
       MYSQL_USER: user
       MYSQL_PASSWORD: password
     ports:
-      - "3307:3306"
+      - "3307:3306" # Map to host port 3307 instead
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-        test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-        interval: 3s
-        timeout: 2s
-        retries: 10
-        start_period: 5s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    restart: unless-stopped
 
 volumes:
-    db_data:
+  db_data:
+  prometheus_data:
+  grafana_data:
