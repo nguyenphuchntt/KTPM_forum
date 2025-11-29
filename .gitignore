@@ -5,4 +5,3 @@ k6-tests/
 .idea/
 cmd/.env
 .env
-.env.example

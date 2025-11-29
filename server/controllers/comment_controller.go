@@ -3,6 +3,7 @@ package controllers
 import (
 	"database/sql"
 	"encoding/json"
+	"forum/server/cache"
 	"html"
 	"net/http"
 	"strconv"
@@ -38,7 +39,9 @@ func CreateComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
+	// Invalidate cache for the post
+	cacheKey := "post_" + strconv.Itoa(postID)
+	cache.AppCache.Delete(cacheKey)
 	// Store the comment using the models package
 	commentID, err := models.StoreComment(db, userID, postID, content)
 	if err != nil {
