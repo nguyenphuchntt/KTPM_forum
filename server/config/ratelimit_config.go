@@ -37,18 +37,18 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		GlobalBurst:             getEnvInt("GLOBAL_BURST", 150),
 
 		// Per-user/IP limits
-		UserRequestsPerMinute: getEnvInt("USER_RPM", 1000000000),
+		UserRequestsPerMinute: getEnvInt("USER_RPM", 100),
 		UserWindowSize:        1 * time.Minute,
-		IPRequestsPerMinute:   getEnvInt("IP_RPM", 1000000000),
+		IPRequestsPerMinute:   getEnvInt("IP_RPM", 50),
 		IPWindowSize:          1 * time.Minute,
 
 	// Endpoint-specific limits
-	LoginAttemptsPerWindow:    getEnvInt("LOGIN_ATTEMPTS", 1),
-	LoginWindowSize:           time.Duration(getEnvInt("LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
-	RegisterAttemptsPerWindow: getEnvInt("REGISTER_ATTEMPTS", 3),
-	RegisterWindowSize:        time.Duration(getEnvInt("REGISTER_WINDOW_MINUTES", 60)) * time.Minute,
-	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 10),
-	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 30),
+	LoginAttemptsPerWindow:    getEnvInt("LOGIN_ATTEMPTS", 20),
+	LoginWindowSize:           time.Duration(getEnvInt("LOGIN_WINDOW_MINUTES", 10)) * time.Minute,
+	RegisterAttemptsPerWindow: getEnvInt("REGISTER_ATTEMPTS", 5),
+	RegisterWindowSize:        time.Duration(getEnvInt("REGISTER_WINDOW_MINUTES", 10)) * time.Minute,
+	PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 50),
+	CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 100),
 	}
 }
 

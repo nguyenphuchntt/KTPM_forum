@@ -6,6 +6,7 @@ import (
 	"os"
 	"database/sql"
 	"time"
+	"runtime"
 
 	"forum/server/config"
 	"forum/server/middleware"
@@ -67,8 +68,14 @@ func main() {
 	// Initialize global rate limiting middleware
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
 	
+	// Initialize uptime metrics
+	metrics.ProcessStartTimeSeconds.Set(float64(time.Now().Unix()))
+	
 	// Start collecting DB connection stats
 	go collectDBStats(db)
+	
+	// Start collecting runtime stats
+	go collectRuntimeStats()
 	
 	// Start the HTTP server with rate limiting
 	handler := middleware.MetricsMiddleware(rateLimitMiddleware.Limit(routes.Routes(db)))
@@ -104,5 +111,47 @@ func collectDBStats(db *sql.DB) {
         metrics.DbConnectionsInUse.Set(float64(stats.InUse))
         metrics.DbConnectionsIdle.Set(float64(stats.Idle))
         metrics.DbConnectionsOpen.Set(float64(stats.OpenConnections))
+    }
+}
+
+func collectRuntimeStats() {
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+    
+    var memStats runtime.MemStats
+    var lastGCCount uint32
+    var lastGCPauseNs uint64
+    
+    for range ticker.C {
+        // Collect goroutine count
+        metrics.GoGoroutines.Set(float64(runtime.NumGoroutine()))
+        
+        // Collect memory stats
+        runtime.ReadMemStats(&memStats)
+        metrics.GoMemoryHeapAlloc.Set(float64(memStats.Alloc))
+        metrics.GoMemoryHeapInuse.Set(float64(memStats.HeapInuse))
+        metrics.GoMemoryHeapSys.Set(float64(memStats.HeapSys))
+        metrics.GoMemoryStackInuse.Set(float64(memStats.StackInuse))
+        
+        // Track GC metrics
+        if memStats.NumGC > lastGCCount {
+            // New GC cycle(s) occurred
+            gcCountDiff := memStats.NumGC - lastGCCount
+            for i := uint32(0); i < gcCountDiff; i++ {
+                metrics.GoGCCount.Inc()
+            }
+            
+            // Record most recent GC pause time
+            if memStats.PauseNs[(memStats.NumGC+255)%256] > lastGCPauseNs {
+                pauseSeconds := float64(memStats.PauseNs[(memStats.NumGC+255)%256]) / 1e9
+                metrics.GoGCPauseSeconds.Observe(pauseSeconds)
+                lastGCPauseNs = memStats.PauseNs[(memStats.NumGC+255)%256]
+            }
+            
+            lastGCCount = memStats.NumGC
+        }
+        
+        // Increment uptime counter
+        metrics.UptimeSeconds.Add(10) // Add 10 seconds for each tick
     }
 }

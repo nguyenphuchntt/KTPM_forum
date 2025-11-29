@@ -12,6 +12,10 @@ func MetricsMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         start := time.Now()
         
+        // Increment in-flight requests
+        metrics.HttpInFlightRequests.Inc()
+        defer metrics.HttpInFlightRequests.Dec()
+        
         // Create response writer wrapper to capture status code
         wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
         

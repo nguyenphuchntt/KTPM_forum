@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"forum/server/config"
+	"forum/server/metrics"
 	"forum/server/middleware/ratelimit"
 	"forum/server/models"
 )
@@ -55,6 +56,7 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 
 		// 1. Check global rate limit
 		if !m.globalLimiter.Allow("global") {
+			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, "global").Inc()
 			m.sendRateLimitError(w, r, "Too many requests globally. Please try again later.")
 			return
 		}
@@ -78,6 +80,11 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 		}
 
 		if !limiter.Allow(limitKey) {
+			limiterType := "ip"
+			if userID != "" {
+				limiterType = "user"
+			}
+			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, limiterType).Inc()
 			m.sendRateLimitError(w, r, "Rate limit exceeded. Please slow down.")
 			return
 		}
@@ -207,6 +214,7 @@ func (e *EndpointRateLimiter) LimitLogin(next http.HandlerFunc, db *sql.DB) http
 
 		if !e.loginLimiter.Allow(key) {
 			log.Printf("LOGIN_RATE_LIMIT | IP: %s", ip)
+			metrics.RateLimitDropsTotal.WithLabelValues("/signin", "login").Inc()
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -223,6 +231,7 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 
 		if !e.registerLimiter.Allow(key) {
 			log.Printf("REGISTER_RATE_LIMIT | IP: %s", ip)
+			metrics.RateLimitDropsTotal.WithLabelValues("/signup", "register").Inc()
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -243,6 +252,7 @@ func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB)
 		key := fmt.Sprintf("post:%d", userID)
 		if !e.postLimiter.Allow(key) {
 			log.Printf("POST_RATE_LIMIT | User: %d", userID)
+			metrics.RateLimitDropsTotal.WithLabelValues("/post/createpost", "post").Inc()
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -263,6 +273,7 @@ func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.
 		key := fmt.Sprintf("comment:%d", userID)
 		if !e.commentLimiter.Allow(key) {
 			log.Printf("COMMENT_RATE_LIMIT | User: %d", userID)
+			metrics.RateLimitDropsTotal.WithLabelValues("/post/addcommentREQ", "comment").Inc()
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}

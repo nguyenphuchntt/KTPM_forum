@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"forum/server/database"
 )
 
 type Post struct {
@@ -79,7 +81,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, currentPage)
+	rows, err := database.QueryWithMetrics(db, "select_posts", query, currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -162,7 +164,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 	WHERE p.id = ?`
 
 	// Use QueryRow for a single result
-	row := db.QueryRow(query, postID)
+	row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail", query, postID)
 
 	// Scan the data into the Post struct
 	err := row.Scan(
@@ -175,6 +177,7 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		&post.Dislikes,
 		&post.Comments,
 		&post.CategoriesStr)
+	recordError(err)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return PostDetail{}, 404, fmt.Errorf("post not found: %w", err)
@@ -253,7 +256,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 			p.created_at
 		LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, categoryID, currentpage)
+	rows, err := database.QueryWithMetrics(db, "select_posts_by_category", query, categoryID, currentpage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -347,7 +350,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, user_id, currentPage)
+	rows, err := database.QueryWithMetrics(db, "select_posts_by_user", query, user_id, currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -446,7 +449,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 		p.created_at DESC
 	LIMIT 10 OFFSET ? ;
 	`
-	rows, err := db.Query(query, user_id, currentPage)
+	rows, err := database.QueryWithMetrics(db, "select_liked_posts", query, user_id, currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -493,7 +496,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 func StorePost(db *sql.DB, user_id int, title, content string) (int64, error) {
 	query := `INSERT INTO posts (user_id,title,content) VALUES (?,?,?)`
 
-	result, err := db.Exec(query, user_id, title, content)
+	result, err := database.ExecWithMetrics(db, "insert_post", query, user_id, title, content)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -506,7 +509,7 @@ func StorePost(db *sql.DB, user_id int, title, content string) (int64, error) {
 func StorePostCategory(db *sql.DB, post_id int64, category_id int) (int64, error) {
 	query := `INSERT INTO post_category (post_id, category_id) VALUES (?,?)`
 
-	result, err := db.Exec(query, post_id, category_id)
+	result, err := database.ExecWithMetrics(db, "insert_post_category", query, post_id, category_id)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -534,7 +537,7 @@ func StoreAllPostCategories(db *sql.DB, post_id int64, category_ids []int) (int6
 		values = append(values, post_id, category_id)
 	}
 
-	_, err := db.Exec(queryBuilder.String(), values...)
+	_, err := database.ExecWithMetrics(db, "insert_post_categories", queryBuilder.String(), values...)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -544,7 +547,7 @@ func StoreAllPostCategories(db *sql.DB, post_id int64, category_ids []int) (int6
 
 func StorePostReaction(db *sql.DB, user_id, post_id int, reaction string) (int64, error) {
 	query := `INSERT INTO post_reactions (user_id,post_id,reaction) VALUES (?,?,?)`
-	result, err := db.Exec(query, user_id, post_id, reaction)
+	result, err := database.ExecWithMetrics(db, "insert_post_reaction", query, user_id, post_id, reaction)
 	if err != nil {
 		return 0, fmt.Errorf("error inserting reaction data -> ")
 	}
@@ -557,17 +560,21 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	var likeCount, dislikeCount int
 	var dbreaction string
 	var err error
-	db.QueryRow("SELECT reaction FROM post_reactions WHERE user_id=? AND post_id=?", user_id, post_id).Scan(&dbreaction)
+	row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_reaction", "SELECT reaction FROM post_reactions WHERE user_id=? AND post_id=?", user_id, post_id)
+	err = row.Scan(&dbreaction)
+	if err != sql.ErrNoRows {
+		recordError(err)
+	}
 
 	if dbreaction == "" {
 		_, err = StorePostReaction(db, user_id, post_id, userReaction)
 	} else {
 		if userReaction == dbreaction {
 			query := "DELETE FROM post_reactions WHERE user_id = ? AND post_id = ?"
-			_, err = db.Exec(query, user_id, post_id)
+			_, err = database.ExecWithMetrics(db, "delete_post_reaction", query, user_id, post_id)
 		} else {
 			query := "UPDATE post_reactions SET reaction = ? WHERE user_id = ? AND post_id = ?"
-			_, err = db.Exec(query, userReaction, user_id, post_id)
+			_, err = database.ExecWithMetrics(db, "update_post_reaction", query, userReaction, user_id, post_id)
 		}
 	}
 
@@ -576,8 +583,12 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	}
 
 	// Fetch the new count of reactions for this post
-	db.QueryRow("SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "like").Scan(&likeCount)
-	db.QueryRow("SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "dislike").Scan(&dislikeCount)
+	row1, recordError1 := database.QueryRowWithMetricsAndError(db, "select_post_like_count", "SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "like")
+	row1.Scan(&likeCount)
+	recordError1(nil)
+	row2, recordError2 := database.QueryRowWithMetricsAndError(db, "select_post_dislike_count", "SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "dislike")
+	row2.Scan(&dislikeCount)
+	recordError2(nil)
 
 	return likeCount, dislikeCount, nil
 }
