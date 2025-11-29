@@ -21,6 +21,11 @@ func ServeStaticFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set proper MIME type for JavaScript modules
+	if strings.HasSuffix(filePath, ".js") {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	}
+
 	// Serve the file
 	http.ServeFile(w, r, filePath)
 }
