@@ -195,12 +195,39 @@ if (select) {
     // Parse the value as JSON to extract id and label
     const selectedValue = JSON.parse(e.target.value);
     const { id, label } = selectedValue;
+  select.addEventListener("change", (e) => {
+    // Parse the value as JSON to extract id and label
+    const selectedValue = JSON.parse(e.target.value);
+    const { id, label } = selectedValue;
 
     // create the elemenet for the category
     const span = document.createElement("span");
     span.textContent = label;
     span.classList.add("selected-category");
+    // create the elemenet for the category
+    const span = document.createElement("span");
+    span.textContent = label;
+    span.classList.add("selected-category");
 
+    // Add a remove button to the span
+    const removeBtn = document.createElement("span");
+    removeBtn.textContent = "×";
+    removeBtn.classList.add("remove-category");
+    removeBtn.addEventListener("click", () => {
+      span.remove();
+      input.remove();
+      // Re-enable the corresponding option in the select
+      Array.from(e.target.options).find((option) => {
+        try {
+          const optionValue = JSON.parse(option.value);
+          return optionValue.id === id;
+        } catch {
+          return false;
+        }
+      }).disabled = false;
+    });
+
+    span.appendChild(removeBtn);
     // Add a remove button to the span
     const removeBtn = document.createElement("span");
     removeBtn.textContent = "×";
@@ -226,7 +253,16 @@ if (select) {
     input.type = "hidden";
     input.value = id;
     input.name = "categories";
+    // create hidden input to hold the id of selected category
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.value = id;
+    input.name = "categories";
 
+    // add the elements (span and hidden input)
+    // at the first position of the categories container
+    const categoriesContainer = document.querySelector(".selected-categories");
+    categoriesContainer.append(input, span);
     // add the elements (span and hidden input)
     // at the first position of the categories container
     const categoriesContainer = document.querySelector(".selected-categories");
@@ -234,7 +270,12 @@ if (select) {
 
     // disable the option selected in the select
     e.target.options[e.target.selectedIndex].disabled = true;
+    // disable the option selected in the select
+    e.target.options[e.target.selectedIndex].disabled = true;
 
+    // Reset the select
+    e.target.selectedIndex = 0;
+  });
     // Reset the select
     e.target.selectedIndex = 0;
   });
@@ -272,7 +313,23 @@ window.CreatPost = async function () {
     }, 3000);
     return;
   }
+  if (!title.value || !content.value || categories.childElementCount === 0) {
+    logerror.innerText =
+      "Please fill in all fields and select at least one category.";
+    setTimeout(() => {
+      logerror.innerText = "";
+    }, 3000);
+    return;
+  }
 
+  if (title.value.length > 100) {
+    logerror.innerText =
+      "Title is too long. Please keep it under 100 characters.";
+    setTimeout(() => {
+      logerror.innerText = "";
+    }, 3000);
+    return;
+  }
   if (title.value.length > 100) {
     logerror.innerText =
       "Title is too long. Please keep it under 100 characters.";
@@ -466,12 +523,116 @@ window.register = function () {
       password.value
     )}&password-confirmation=${encodeURIComponent(passConfirm.value)}`
   );
+  const xml = new XMLHttpRequest();
+  xml.open("POST", "/signup", true);
+  xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  xml.onreadystatechange = function () {
+    if (xml.readyState === 4) {
+      const logerror = document.querySelector(".errorarea");
+      if (xml.status === 200) {
+        logerror.innerText = `User ${username.value} created successfully, redirect to login page in 2s ...`;
+        logerror.style.color = "green";
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 2000);
+      } else if (xml.status === 302) {
+        logerror.innerText =
+          "You are already loged in, redirect to home page in 2s...";
+        logerror.style.color = "green";
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 2000);
+      } else if (xml.status === 400) {
+        logerror.innerText = "Error: verify your data and try again!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      } else if (xml.status === 304) {
+        logerror.innerText = "User already exists!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      } else {
+        logerror.innerText = "Cannot create user, try again later!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      }
+    }
+  };
+
+  // Get form data
+  xml.send(
+    `email=${encodeURIComponent(email.value)}&username=${encodeURIComponent(
+      username.value
+    )}&password=${encodeURIComponent(
+      password.value
+    )}&password-confirmation=${encodeURIComponent(passConfirm.value)}`
+  );
 }
 
 window.login = function () {
   const username = document.querySelector("#username");
   const password = document.querySelector("#password");
 
+  const xml = new XMLHttpRequest();
+  xml.open("POST", "/signin", true);
+  xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+  xml.onreadystatechange = function () {
+    if (xml.readyState === 4) {
+      const logerror = document.querySelector(".errorarea");
+      if (xml.status === 200) {
+        logerror.innerText = `Login in successfully, redirect to home page in 2s ...`;
+        logerror.style.color = "green";
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 2000);
+      } else if (xml.status === 302) {
+        logerror.innerText =
+          "You are already loged in, redirect to home page in 2s...";
+        logerror.style.color = "green";
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 2000);
+      } else if (xml.status === 400) {
+        logerror.innerText = "Error: verify your data and try again!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      } else if (xml.status === 404) {
+        logerror.innerText = "User not found!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      } else if (xml.status === 401) {
+        logerror.innerText = "Invalid username or password!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      } else {
+        logerror.innerText = "Cannot log you in now, try again later!";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 1500);
+      }
+    }
+  };
+
+  // Get form data
+  xml.send(
+    `username=${encodeURIComponent(
+      username.value
+    )}&password=${encodeURIComponent(password.value)}`
+  );
   const xml = new XMLHttpRequest();
   xml.open("POST", "/signin", true);
   xml.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -537,3 +698,25 @@ window.closeMobileNav = (e) => {
   const nav = document.querySelector(".mobile-nav");
   nav.style.display = "none";
 };
+
+// const formatTime = (timeStr) => {
+//     // Parse the input time string
+//     const date = new Date(timeStr);
+
+//     return date.toLocaleString('default', {
+//         hour: '2-digit',
+//         minute: '2-digit',
+//         day: '2-digit',
+//         month: '2-digit',
+//         year: 'numeric',
+//     }).replace(',', ' ')
+// }
+
+// document.addEventListener("DOMContentLoaded", () => {
+//     document.querySelectorAll("[data-timestamp]").forEach((element) => {
+//         const time = element.getAttribute("data-timestamp");
+//         if (time) {
+//             element.textContent = formatTime(time);
+//         }
+//     });
+// });
