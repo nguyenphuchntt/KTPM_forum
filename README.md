@@ -1,4 +1,13 @@
 # Giới thiệu dự án gốc
+A comprehensive web forum application built using Go that enables user communication through posts, comments, and reactions.
+
+## Tác giả
+- Abdelhamid Bouziani
+- Hamza Maach
+- Omar Ait Benhammou
+- Mehdi Moulabbi
+- Youssef Basta
+
 ## Tính năng chính
 ### 1. Authentication & Session Management
 - *Cơ chế:* Cookie-based Authentication.
