@@ -39,15 +39,16 @@ func CreateComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	// Invalidate cache for the post
-	cacheKey := "post_" + strconv.Itoa(postID)
-	cache.AppCache.Delete(cacheKey)
 	// Store the comment using the models package
 	commentID, err := models.StoreComment(db, userID, postID, content)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	// Invalidate cache (comment count changed)
+	cache.AppCache.Delete("post_" + strconv.Itoa(postID))
+	cache.AppCache.Delete("index_posts_page_0")
 
 	// Fetch additional details using the models package
 	commentsCount, err := models.CountCommentsByPostID(db, postID)
@@ -61,6 +62,10 @@ func CreateComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	cache.AppCache.Delete("post_" + strconv.Itoa(postID))
+
+	cache.AppCache.Delete("index_posts_page_0")
 
 	// Return the new comment details as JSON
 	w.Header().Set("Content-Type", "application/json")
@@ -101,11 +106,22 @@ func ReactToComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(400)
 		return
 	}
+
+	var post_id int
+	err = db.QueryRow("SELECT post_id FROM comments WHERE id = ?", comment_id).Scan(&post_id)
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+
 	likeCount, dislikeCount, err := models.ReactToComment(db, user_id, comment_id, userReaction)
 	if err != nil {
 		w.WriteHeader(500)
 		return
 	}
+
+	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
+
 	// Return the new count as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"commentlikesCount": likeCount, "commentdislikesCount": dislikeCount})
