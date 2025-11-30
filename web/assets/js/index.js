@@ -44,6 +44,13 @@ function postreaction(postId, reaction) {
         setTimeout(() => {
           document.getElementById("errorlogin" + postId).innerText = ``;
         }, 1000);
+      } else if (xhr.status === 429) {
+        document.getElementById(
+          "errorlogin" + postId
+        ).innerText = `Vượt quá số lần, vui lòng thử lại sau!`;
+        setTimeout(() => {
+          document.getElementById("errorlogin" + postId).innerText = ``;
+        }, 3000);
       } else if (xhr.status === 500) {
         document.getElementById(
           "errorlogin" + postId
@@ -89,6 +96,15 @@ function commentreaction(commentid, reaction) {
             "commenterrorlogin" + commentid
           ).innerText = ``;
         }, 1000);
+      } else if (xhr.status === 429) {
+        document.getElementById(
+          "commenterrorlogin" + commentid
+        ).innerText = `Vượt quá số lần, vui lòng thử lại sau!`;
+        setTimeout(() => {
+          document.getElementById(
+            "commenterrorlogin" + commentid
+          ).innerText = ``;
+        }, 3000);
       } else if (xhr.status === 500) {
         document.getElementById(
           "commenterrorlogin" + commentid
@@ -172,6 +188,13 @@ function addcomm(postId) {
         setTimeout(() => {
           document.getElementById("errorlogin" + postId).innerText = ``;
         }, 1000);
+      } else if (xhr.status === 429) {
+        document.getElementById(
+          "errorlogin" + postId
+        ).innerText = `Bạn đang bình luận quá nhanh! Vui lòng thử lại sau.`;
+        setTimeout(() => {
+          document.getElementById("errorlogin" + postId).innerText = ``;
+        }, 3000);
       } else {
         document.getElementById(
           "errorlogin" + postId
@@ -316,6 +339,13 @@ function CreatPost() {
         setTimeout(() => {
           window.location.href = "/login";
         }, 2000);
+      } else if (xml.status === 429) {
+        logerror.innerText =
+          "Bạn đang tạo bài viết quá nhanh! Vui lòng thử lại sau.";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 3000);
       } else {
         logerror.innerText = "Error: check your entries and try again!";
         setTimeout(() => {
@@ -371,6 +401,12 @@ function register() {
         setTimeout(() => {
           logerror.innerText = "";
         }, 1500);
+      } else if (xml.status === 429) {
+        logerror.innerText = "Quá nhiều lần đăng ký! Vui lòng thử lại sau.";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 3000);
       } else {
         logerror.innerText = "Cannot create user, try again later!";
         logerror.style.color = "red";
@@ -433,6 +469,12 @@ function login() {
         setTimeout(() => {
           logerror.innerText = "";
         }, 1500);
+      } else if (xml.status === 429) {
+        logerror.innerText = "Quá nhiều lần đăng nhập! Vui lòng thử lại sau.";
+        logerror.style.color = "red";
+        setTimeout(() => {
+          logerror.innerText = "";
+        }, 3000);
       } else {
         logerror.innerText = "Cannot log you in now, try again later!";
         logerror.style.color = "red";

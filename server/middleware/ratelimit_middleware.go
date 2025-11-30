@@ -213,9 +213,18 @@ func (e *EndpointRateLimiter) LimitLogin(next http.HandlerFunc, db *sql.DB) http
 		key := "login:" + ip
 
 		if !e.loginLimiter.Allow(key) {
-			log.Printf("LOGIN_RATE_LIMIT | IP: %s", ip)
+			log.Printf("[RATE_LIMIT] Type=login | IP=%s | Limit=%d/%v",
+				ip, e.config.LoginAttemptsPerWindow, e.config.LoginWindowSize)
+			
 			metrics.RateLimitDropsTotal.WithLabelValues("/signin", "login").Inc()
+			
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "rate_limit_exceeded",
+				"message": "Quá nhiều lần đăng nhập. Vui lòng thử lại sau.",
+			})
 			return
 		}
 
@@ -230,9 +239,18 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 		key := "register:" + ip
 
 		if !e.registerLimiter.Allow(key) {
-			log.Printf("REGISTER_RATE_LIMIT | IP: %s", ip)
+			log.Printf("[RATE_LIMIT] Type=register | IP=%s | Limit=%d/%v",
+				ip, e.config.RegisterAttemptsPerWindow, e.config.RegisterWindowSize)
+			
 			metrics.RateLimitDropsTotal.WithLabelValues("/signup", "register").Inc()
+			
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "rate_limit_exceeded",
+				"message": "Quá nhiều lần đăng ký. Vui lòng thử lại sau.",
+			})
 			return
 		}
 
@@ -251,9 +269,18 @@ func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB)
 
 		key := fmt.Sprintf("post:%d", userID)
 		if !e.postLimiter.Allow(key) {
-			log.Printf("POST_RATE_LIMIT | User: %d", userID)
+			log.Printf("[RATE_LIMIT] Type=post | UserID=%d | Limit=%d/hour",
+				userID, e.config.PostsPerHour)
+			
 			metrics.RateLimitDropsTotal.WithLabelValues("/post/createpost", "post").Inc()
+			
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "rate_limit_exceeded",
+				"message": "Bạn đang tạo bài viết quá nhanh. Vui lòng thử lại sau.",
+			})
 			return
 		}
 
@@ -272,9 +299,18 @@ func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.
 
 		key := fmt.Sprintf("comment:%d", userID)
 		if !e.commentLimiter.Allow(key) {
-			log.Printf("COMMENT_RATE_LIMIT | User: %d", userID)
+			log.Printf("[RATE_LIMIT] Type=comment | UserID=%d | Limit=%d/hour",
+				userID, e.config.CommentsPerHour)
+			
 			metrics.RateLimitDropsTotal.WithLabelValues("/post/addcommentREQ", "comment").Inc()
+			
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "rate_limit_exceeded",
+				"message": "Bạn đang bình luận quá nhanh. Vui lòng thử lại sau.",
+			})
 			return
 		}
 
