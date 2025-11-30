@@ -1,4 +1,137 @@
 import UploadManager from './upload_manager.js';
+import offlineQueue from './offline_manager.js';
+
+function updateNetworkStatus() {
+  const isOnline = navigator.onLine;
+  let indicator = document.getElementById('network-status');
+  
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'network-status';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 10px 15px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 10000;
+      display: none;
+    `;
+    document.body.appendChild(indicator);
+  }
+  
+  if (!isOnline) {
+    indicator.style.background = '#ff6b6b';
+    indicator.style.color = 'white';
+    indicator.textContent = 'Offline - Changes will be saved';
+    indicator.style.display = 'block';
+  } else {
+    const queueCount = offlineQueue.getQueueCount();
+    if (queueCount > 0) {
+      indicator.style.background = '#ffd93d';
+      indicator.style.color = '#333';
+      indicator.textContent = `Syncing ${queueCount} item(s)...`;
+      indicator.style.display = 'block';
+    } else {
+      indicator.style.display = 'none';
+    }
+  }
+}
+
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+
+window.addEventListener('queueItemProcessed', (e) => {
+  const { item, status, data } = e.detail;
+  if (status === 'success') {
+    if (item.type === 'post') {
+      handlePostSyncSuccess(item, data);
+    } else if (item.type === 'comment') {
+      handleCommentSyncSuccess(item, data);
+    }
+  } else if (status === 'failed') {
+    handleSyncFailure(item);
+  }
+  
+  updateNetworkStatus();
+});
+
+function handlePostSyncSuccess(item, data) {
+  const pendingElement = document.querySelector(`[data-pending-id="${item.id}"]`);
+  if (pendingElement) {
+    pendingElement.remove();
+  }
+}
+
+function handleCommentSyncSuccess(item, data) {
+  const pendingElement = document.querySelector(`[data-pending-id="${item.id}"]`);
+  if (pendingElement && data) {
+    // Replace pending comment with real one
+    const comment = document.createElement("div");
+    comment.innerHTML = `
+      <div class="comment">
+        <div class="comment-header">
+          <p class="comment-user">${data.username}</p>
+          <span></span>
+          <p class="comment-time">${data.created_at}</p>
+        </div>
+        <div class="comment-body">
+          <p class="comment-content">${data.content}</p>
+        </div>
+        <div class="comment-footer">
+          <button id="commentlikescount${data.ID}" onclick="commentreaction('${data.ID}','like')"
+            class="comment-like"><i class="fa-regular fa-thumbs-up"></i>${data.likes}</button>
+          <button id="commentdislikescount${data.ID}" onclick="commentreaction('${data.ID}','dislike')"
+            class="comment-dislike"><i class="fa-regular fa-thumbs-down"></i>${data.dislikes}</button>
+        </div>
+        <span style="color:red" id="commenterrorlogin${data.ID}"></span>
+      </div>
+    `;
+    pendingElement.replaceWith(comment);
+    const commentsCountEl = document.getElementsByClassName("post-comments")[0];
+    if (commentsCountEl) {
+      commentsCountEl.innerHTML = `<i class="fa-regular fa-comment"></i>${data.commentscount}`;
+    }
+  }
+}
+
+function handleSyncFailure(item) {
+  const pendingElement = document.querySelector(`[data-pending-id="${item.id}"]`);
+  if (pendingElement) {
+    const errorMsg = pendingElement.querySelector('.pending-error');
+    if (errorMsg) {
+      errorMsg.textContent = 'Failed to sync after multiple attempts';
+      errorMsg.style.color = 'red';
+    }
+  }
+}
+
+function createPendingComment(content, queueId) {
+  const comment = document.createElement("div");
+  comment.setAttribute('data-pending-id', queueId);
+  comment.style.opacity = '0.6';
+  comment.innerHTML = `
+    <div class="comment pending-comment">
+      <div class="comment-header">
+        <p class="comment-user">You</p>
+        <span></span>
+        <p class="comment-time">Just now</p>
+      </div>
+      <div class="comment-body">
+        <p class="comment-content">${content}</p>
+      </div>
+      <div class="comment-footer">
+        <span style="color: orange; font-size: 12px;">
+          Pending - Waiting for network...
+        </span>
+        <span class="pending-error" style="margin-left: 10px; font-size: 12px;"></span>
+      </div>
+    </div>
+  `;
+  
+  return comment;
+}
 
 window.addEventListener("resize", () => {
   if (document.body.clientWidth > 600) {
@@ -109,6 +242,29 @@ window.commentreaction = function (commentid, reaction) {
 
 function addcomm(postId) {
   const content = document.getElementById("comment-content");
+  const commentText = content.value.trim();
+
+    if (!commentText) {
+    return;
+    }
+
+    if (!navigator.onLine) {
+    const queueId = offlineQueue.addToQueue({
+        type: 'comment',
+        data: {
+        postId: postId,
+        content: commentText
+        }
+    });
+
+    const pendingComment = createPendingComment(commentText, queueId);
+    document.getElementsByClassName("comments")[0].prepend(pendingComment);
+
+    content.value = "";
+    updateNetworkStatus();
+    return;
+    }
+
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/post/addcommentREQ", true);
   xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -168,7 +324,21 @@ function addcomm(postId) {
         setTimeout(() => {
           document.getElementById("errorlogin" + postId).innerText = ``;
         }, 1000);
-      } else if (xhr.status === 401) {
+       } else if (xhr.status === 0) {
+        const queueId = offlineQueue.addToQueue({
+            type: 'comment',
+            data: {
+            postId: postId,
+            content: commentText
+            }
+        });
+        
+        const pendingComment = createPendingComment(commentText, queueId);
+        document.getElementsByClassName("comments")[0].prepend(pendingComment);
+        
+        content.value = "";
+        updateNetworkStatus();
+      }else if (xhr.status === 401) {
         document.getElementById(
           "errorlogin" + postId
         ).innerText = `You must login first!`;
@@ -185,7 +355,7 @@ function addcomm(postId) {
       }
     }
   };
-  xhr.send(`postid=${postId}&comment=${encodeURIComponent(content.value)}`);
+  xhr.send(`postid=${postId}&comment=${encodeURIComponent(commentText)}`);
 }
 window.addcomm = addcomm;
 
@@ -333,6 +503,28 @@ window.CreatPost = async function () {
     cateris.push(x.value);
   });
 
+    if (!navigator.onLine) {
+    const queueId = offlineQueue.addToQueue({
+        type: 'post',
+        data: {
+        title: title.value,
+        content: content.value,
+        categories: cateris,
+        imageURL: imageURL
+        }
+    });
+    
+    logerror.innerText = "Offline - Post saved and will be published when connection is restored";
+    logerror.style.color = "orange";
+    
+    updateNetworkStatus();
+    
+    setTimeout(() => {
+        window.location.href = "/";
+    }, 2000);
+    return;
+    }
+
   const xml = new XMLHttpRequest();
   xml.open("POST", "/post/createpost", true);
 
@@ -378,19 +570,39 @@ window.CreatPost = async function () {
           }, 500);
         } else {
           logerror.innerText =
-            "Post created successfully, redirect to home page in 2s ...";
+            "Post created successfully, redirect to home page in 1s ...";
           logerror.style.color = "green";
           setTimeout(() => {
             window.location.href = "/";
-          }, 2000);
+          }, 1000);
         }
       } else if (xml.status === 401) {
         logerror.innerText =
-          "You are loged out, redirect to login page in 2s...";
+          "You are loged out, redirect to login page in 1s...";
         setTimeout(() => {
           window.location.href = "/login";
-        }, 2000);
-      } else {
+        }, 1000);
+       } else if (xml.status === 0) {
+  // Network error - add to queue
+  const queueId = offlineQueue.addToQueue({
+    type: 'post',
+    data: {
+      title: title.value,
+      content: content.value,
+      categories: cateris,
+      imageURL: imageURL
+    }
+  });
+  
+  logerror.innerText = "Network error - Post saved and will be published when connection is restored";
+  logerror.style.color = "orange";
+  
+  updateNetworkStatus();
+  
+  setTimeout(() => {
+    window.location.href = "/";
+  }, 2000);
+       }else {
         logerror.innerText = "Error: check your entries and try again!";
         setTimeout(() => {
           logerror.innerText = "";
@@ -424,18 +636,18 @@ window.register = function () {
     if (xml.readyState === 4) {
       const logerror = document.querySelector(".errorarea");
       if (xml.status === 200) {
-        logerror.innerText = `User ${username.value} created successfully, redirect to login page in 2s ...`;
+        logerror.innerText = `User ${username.value} created successfully, redirect to login page in 1s ...`;
         logerror.style.color = "green";
         setTimeout(() => {
           window.location.href = "/login";
-        }, 2000);
+        }, 1000);
       } else if (xml.status === 302) {
         logerror.innerText =
           "You are already loged in, redirect to home page in 2s...";
         logerror.style.color = "green";
         setTimeout(() => {
           window.location.href = "/";
-        }, 2000);
+        }, 1000);
       } else if (xml.status === 400) {
         logerror.innerText = "Error: verify your data and try again!";
         logerror.style.color = "red";
@@ -480,18 +692,18 @@ window.login = function () {
     if (xml.readyState === 4) {
       const logerror = document.querySelector(".errorarea");
       if (xml.status === 200) {
-        logerror.innerText = `Login in successfully, redirect to home page in 2s ...`;
+        logerror.innerText = `Login in successfully, redirect to home page in 1s ...`;
         logerror.style.color = "green";
         setTimeout(() => {
           window.location.href = "/";
-        }, 2000);
+        }, 1000);
       } else if (xml.status === 302) {
         logerror.innerText =
-          "You are already loged in, redirect to home page in 2s...";
+          "You are already loged in, redirect to home page in 1s...";
         logerror.style.color = "green";
         setTimeout(() => {
           window.location.href = "/";
-        }, 2000);
+        }, 1000);
       } else if (xml.status === 400) {
         logerror.innerText = "Error: verify your data and try again!";
         logerror.style.color = "red";
@@ -537,3 +749,6 @@ window.closeMobileNav = (e) => {
   const nav = document.querySelector(".mobile-nav");
   nav.style.display = "none";
 };
+
+// Initialize network status on load
+updateNetworkStatus();
