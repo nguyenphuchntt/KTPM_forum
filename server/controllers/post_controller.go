@@ -255,8 +255,7 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
-		// If type assertion failed, delete invalid cache
-		cache.AppCache.Delete(cacheKey)
+		return
 	}
 
 	// If cache miss
