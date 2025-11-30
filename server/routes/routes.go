@@ -9,7 +9,7 @@ import (
 	"forum/server/middleware"
 )
 
-func Routes(db *sql.DB) http.Handler {
+func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookController *controllers.WebhookController) http.Handler {
 	mux := http.NewServeMux()
 
 	// Initialize rate limit config
@@ -93,6 +93,21 @@ func Routes(db *sql.DB) http.Handler {
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		controllers.GetRegisterPage(w, r, db)
 	})
+
+	// API routes for image upload (if gatekeeper available)
+	if uploadGatekeeper != nil {
+		// Request SAS token to upload to quarantine
+		mux.Handle("/api/upload/request-url", endpointLimiter.LimitUpload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uploadGatekeeper.GenerateUploadURL(w, r)
+		}), db))
+	}
+
+	// Webhook for Event Grid
+	if webhookController != nil {
+		mux.HandleFunc("/api/webhook/blob-created", func(w http.ResponseWriter, r *http.Request) {
+			webhookController.HandleBlobCreated(w, r)
+		})
+	}
 
 	return mux
 }

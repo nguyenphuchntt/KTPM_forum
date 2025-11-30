@@ -49,7 +49,7 @@ func getPostDetailFromCache(cacheKey string) (models.PostDetail, bool) {
 
 func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
-	
+
 	var valid bool
 	var username string
 	userID, username, valid := models.ValidSession(r, db)
@@ -92,8 +92,8 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-	
-	// If cache miss 
+
+	// If cache miss
 	posts, statusCode, err := models.FetchPosts(db, page)
 	if err != nil {
 		log.Error().
@@ -132,11 +132,11 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
-	
+
 	var valid bool
 	var username string
 	userID, username, valid := models.ValidSession(r, db)
-	
+
 	log := logger.WithRequest(r, userID)
 
 	if r.Method != http.MethodGet {
@@ -211,7 +211,7 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
-	
+
 	log.Info().
 		Int("post_count", len(posts)).
 		Int("category_id", id).
@@ -223,11 +223,11 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
-	
+
 	var valid bool
 	var username string
 	userID, username, valid := models.ValidSession(r, db)
-	
+
 	log := logger.WithRequest(r, userID)
 
 	if r.Method != http.MethodGet {
@@ -285,7 +285,7 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
-	
+
 	log.Info().
 		Int("post_id", postID).
 		Bool("cache_hit", false).
@@ -318,7 +318,7 @@ func GetPostCreationForm(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
-	
+
 	var user_id int
 	var valid bool
 
@@ -326,7 +326,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(401)
 		return
 	}
-	
+
 	log := logger.WithRequest(r, user_id)
 	log.Info().Msg("Creating new post")
 
@@ -336,7 +336,9 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
+	// Parse multipart form
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10 MB limit
+		log.Println("Error parsing multipart form:", err)
 		log.Error().Err(err).Msg("Failed to parse form")
 		w.WriteHeader(400)
 		return
@@ -346,12 +348,15 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	content := r.FormValue("content")
 	catids := r.Form["categories"]
 
-	catids = strings.Split(catids[0], ",")
+	// Handle categories (might be comma separated string in one element or multiple elements)
+	if len(catids) > 0 && strings.Contains(catids[0], ",") {
+		catids = strings.Split(catids[0], ",")
+	}
 
 	title = html.EscapeString(title)
 	content = html.EscapeString(content)
 
-	if catids == nil || strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
+	if len(catids) == 0 || strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
 		log.Warn().
 			Bool("empty_title", strings.TrimSpace(title) == "").
 			Bool("empty_content", strings.TrimSpace(content) == "").
@@ -379,9 +384,35 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	pid, err := models.StorePost(db, user_id, title, content)
+	// Handle Image Upload
+	var imagePath string
+
+	// Check for pre-uploaded image URL (from Azure)
+	imageUrl := r.FormValue("image_url")
+	if imageUrl != "" {
+		imagePath = imageUrl
+	} else {
+		// Fallback to local upload
+		file, header, err := r.FormFile("image")
+		if err == nil {
+			defer file.Close()
+			storage := utils.NewLocalStorage(config.BasePath + "web/assets/uploads")
+			imagePath, err = storage.Save(file, header)
+			if err != nil {
+				log.Println("Error saving image:", err)
+				w.WriteHeader(500)
+				return
+			}
+		} else if err != http.ErrMissingFile {
+			log.Println("Error retrieving image:", err)
+			w.WriteHeader(400)
+			return
+		}
+	}
+
+	pid, err := models.StorePost(db, user_id, title, content, imagePath)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to store post")
+		log.Println("Error storing post:", err)
 		w.WriteHeader(400)
 		return
 	}
@@ -393,7 +424,6 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	// Invalidate cache
 	cache.AppCache.Delete("index_posts_page_0")
 	for i := 0; i < len(catidsInt); i++ {
 		cache.AppCache.Delete("category_posts_" + strconv.Itoa(catidsInt[i]) + "_page_0")
@@ -434,7 +464,7 @@ func MyCreatedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		page = 0
 	}
 	log := logger.WithRequest(r, user_id)
-	
+
 	posts, statusCode, err := models.FetchCreatedPostsByUser(db, user_id, page)
 	if err != nil {
 		log.Error().Err(err).Int("page", page).Msg("Error fetching user created posts")
@@ -477,7 +507,7 @@ func MyLikedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		page = 0
 	}
 	log := logger.WithRequest(r, user_id)
-	
+
 	posts, statusCode, err := models.FetchLikedPostsByUser(db, user_id, page)
 	if err != nil {
 		log.Error().Err(err).Int("page", page).Msg("Error fetching user liked posts")
@@ -527,6 +557,9 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.WriteHeader(500)
 		return
 	}
+
+	cache.AppCache.Delete("index_posts_page_0")
+	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
 
 	// Return the new count as JSON
 	w.Header().Set("Content-Type", "application/json")

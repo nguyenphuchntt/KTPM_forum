@@ -22,6 +22,12 @@
                     <p class="post-time" data-timestamp="{{.CreatedAt}}">{{.CreatedAt}}</p>
                 </div>
                 <p class="post-content" id="post-content-home">{{.Content}} </p>
+                {{if .ImagePath}}
+                <div class="post-image-container">
+                    <img src="{{.ImagePath}}" alt="Post Image"
+                        style="max-width: 100%; height: auto; margin-top: 10px; border-radius: 8px;">
+                </div>
+                {{end}}
                 <div class="post-categories">
                     {{range .Categories}}
                     <span class="post-category">#{{.}}</span>

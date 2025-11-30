@@ -1,10 +1,10 @@
 package models
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"forum/server/utils/retry"
-	"context"
 	"time"
 
 	"forum/server/database"
@@ -62,7 +62,7 @@ func FetchCommentsByPostID(postID int, db *sql.DB) ([]Comment, error) {
 
 	return retry.TryWithResult(ctx, retryConfig, func() ([]Comment, error) {
 		var comments []Comment
-		
+
 		rows, err := database.QueryWithMetrics(db, "select_comments", query, postID)
 		if err != nil {
 			return nil, err
@@ -84,34 +84,50 @@ func FetchCommentsByPostID(postID int, db *sql.DB) ([]Comment, error) {
 				return nil, err
 			}
 
-			// Assign the post ID and format the created_at field
 			comment.PostID = postID
-			// comment.CreatedAt = utils.FormatTime(comment.CreatedAt)
 
-			// Append the comment to the slice
 			comments = append(comments, comment)
 		}
 
 		return comments, nil
-		})
+	})
 }
 
 func StoreComment(db *sql.DB, user_id, post_id int, content string) (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	query := `INSERT INTO comments (user_id,post_id,content) VALUES (?,?,?)`
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("error starting transaction: %v", err)
+	}
+	defer tx.Rollback()
 
-	retryConfig := retry.DatabaseWriteRetryConfig()
-	return retry.TryWithResult(ctx, retryConfig, func() (int64, error) {
-		result, err := database.ExecWithMetrics(db, "insert_comment", query, user_id, post_id, content)
-		if err != nil {
-			return 0, fmt.Errorf("%v", err)
-		}
+	query := `INSERT INTO comments (user_id, post_id, content) VALUES (?,?,?)`
+	result, err := database.ExecWithMetricsTx(tx, "insert_comment", query, user_id, post_id, content)
+	if err != nil {
+		return 0, fmt.Errorf("error inserting comment: %v", err)
+	}
 
-		commentID, _ := result.LastInsertId()
+	commentID, _ := result.LastInsertId()
 
-		return commentID, nil		
-	})
+	var commentCount int
+	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "count_comments",
+		"SELECT COUNT(*) FROM comments WHERE post_id = ?", post_id)
+	err = row.Scan(&commentCount)
+	recordError(err)
+	if err != nil {
+		return 0, fmt.Errorf("error counting comments: %v", err)
+	}
+
+	query_update_materialized := `UPDATE post_materialized_view SET comment_count = ? WHERE post_id = ?`
+	_, err = database.ExecWithMetricsTx(tx, "update_materialized_comment_count", query_update_materialized, commentCount, post_id)
+	if err != nil {
+		return 0, fmt.Errorf("error updating materialized view: %v", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	return commentID, nil
 }
 
 func StoreCommentReaction(db *sql.DB, user_id, comment_id int, reaction string) (int64, error) {
@@ -179,7 +195,6 @@ func ReactToComment(db *sql.DB, user_id, comment_id int, userReaction string) (i
 		return 0, 0, err
 	}
 
-	// Fetch the new count of reactions for this post
 	row1, recordError1 := database.QueryRowWithMetricsAndError(db, "select_comment_like_count", "SELECT COUNT(*) FROM comment_reactions WHERE comment_id=? AND reaction=?", comment_id, "like")
 	err = row1.Scan(&likeCount)
 	recordError1(err)
