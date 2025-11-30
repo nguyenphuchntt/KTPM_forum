@@ -1,5 +1,6 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS post_materialized_view;
 DROP TABLE IF EXISTS comment_reactions;
 DROP TABLE IF EXISTS post_reactions;
 DROP TABLE IF EXISTS comments;
@@ -84,3 +85,23 @@ CREATE TABLE IF NOT EXISTS comment_reactions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS post_materialized_view (
+    post_id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    username VARCHAR(255) NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    content TEXT NOT NULL,
+    image_path VARCHAR(255),
+    like_count INT DEFAULT 0,
+    dislike_count INT DEFAULT 0,
+    comment_count INT DEFAULT 0,
+    categories_str VARCHAR(1000),
+    created_at TIMESTAMP NOT NULL,
+    
+    INDEX idx_user_id (user_id),
+    INDEX idx_created_at (created_at),
+    INDEX idx_like_count (like_count),
+    INDEX idx_comment_count (comment_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

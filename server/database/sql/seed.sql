@@ -107,3 +107,40 @@ INSERT INTO comment_reactions (user_id, comment_id, reaction) VALUES
 (5, 5, 'like'), (6, 6, 'dislike'), (7, 7, 'like'), (8, 8, 'dislike'),
 (9, 9, 'like'), (10, 10, 'dislike'), (11, 11, 'like'), (12, 12, 'dislike'),
 (13, 13, 'like'), (14, 14, 'dislike'), (15, 15, 'like');
+
+INSERT INTO post_materialized_view 
+    (post_id, user_id, username, title, content, image_path, 
+     like_count, dislike_count, comment_count, categories_str, created_at)
+SELECT 
+    p.id AS post_id,
+    p.user_id,
+    u.username,
+    p.title,
+    p.content,
+    p.image_path,
+
+    COALESCE((
+        SELECT COUNT(*) 
+        FROM post_reactions pr 
+        WHERE pr.post_id = p.id AND pr.reaction = 'like'
+    ), 0) AS like_count,
+    COALESCE((
+        SELECT COUNT(*) 
+        FROM post_reactions pr 
+        WHERE pr.post_id = p.id AND pr.reaction = 'dislike'
+    ), 0) AS dislike_count,
+    COALESCE((
+        SELECT COUNT(*) 
+        FROM comments c 
+        WHERE c.post_id = p.id
+    ), 0) AS comment_count,
+    (
+        SELECT GROUP_CONCAT(cat.label SEPARATOR ',')
+        FROM categories cat
+        INNER JOIN post_category pc ON cat.id = pc.category_id
+        WHERE pc.post_id = p.id
+    ) AS categories_str,
+    p.created_at
+FROM posts p
+INNER JOIN users u ON p.user_id = u.id
+ORDER BY p.id;
