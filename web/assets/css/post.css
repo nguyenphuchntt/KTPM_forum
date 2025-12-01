@@ -732,3 +732,20 @@
         max-width: 100px;
     }
 }
+
+.post-image-container {
+    max-width: 80%;
+    max-height: 300px;
+    margin: 15px 0; 
+    overflow: hidden;   
+}
+
+
+.post-image-container img {
+    max-width: 100%;
+    max-height: 300px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+}
