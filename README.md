@@ -1,5 +1,5 @@
 # Giới thiệu dự án gốc
-A comprehensive web forum application built using Go that enables user communication through posts, comments, and reactions.
+Ứng dụng forum xây dựng bằng ngôn ngữ Golang, cho phép người dùng tương tác với nhau thông qua các bài đăng, bình luận và reaction.
 
 ## Tác giả
 - Abdelhamid Bouziani
