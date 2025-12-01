@@ -1055,18 +1055,10 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 100
               }
             ]
           },
-          "unit": "short"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -1078,12 +1070,12 @@
       },
       "id": 17,
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "area",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -1096,12 +1088,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(forum_db_query_duration_seconds_count[5m])) by (query_type)",
-          "legendFormat": "{{query_type}}",
+          "expr": "forum_uptime_seconds_total",
           "refId": "A"
         }
       ],
-      "title": "💾 DB Query Stats (5m)",
+      "title": "⏱️ Application Uptime",
       "type": "stat"
     },
     {
@@ -1438,63 +1429,6 @@
         }
       ],
       "title": "🐌 Slow Queries (>100ms)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 76
-      },
-      "id": 17,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "forum_uptime_seconds_total",
-          "refId": "A"
-        }
-      ],
-      "title": "⏱️ Application Uptime",
       "type": "stat"
     }
   ],
