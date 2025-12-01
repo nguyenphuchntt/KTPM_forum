@@ -590,6 +590,7 @@
     .post-categories {
         gap: 7px;
         margin-top: 0.7rem;
+        margin-bottom: 10px;
     }
 
     .post-category {
@@ -599,7 +600,6 @@
     }
 
     .post-footer {
-        gap: 10px;
         max-width: 150px;
         margin: 0 10px 10px 20px;
     }
@@ -734,9 +734,9 @@
 }
 
 .post-image-container {
-    max-width: 80%;
+    max-width: 100%;
     max-height: 300px;
-    margin: 15px 0; 
+    margin: 15px auto; 
     overflow: hidden;   
 }
 
