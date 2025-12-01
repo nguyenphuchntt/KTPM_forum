@@ -25,14 +25,14 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		controllers.IndexPosts(w, r, db)
 	})
-	
+
 	mux.HandleFunc("/category/{id}", func(w http.ResponseWriter, r *http.Request) {
 		controllers.IndexPostsByCategory(w, r, db)
 	})
 	mux.HandleFunc("/mycreatedposts", func(w http.ResponseWriter, r *http.Request) {
 		controllers.MyCreatedPosts(w, r, db)
 	})
-	
+
 	mux.HandleFunc("/mylikedposts", func(w http.ResponseWriter, r *http.Request) {
 		controllers.MyLikedPosts(w, r, db)
 	})
@@ -41,7 +41,7 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	})
 
 	// Rate limited comment creation
-	mux.HandleFunc("/post/addcommentREQ", 
+	mux.HandleFunc("/post/addcommentREQ",
 		endpointLimiter.LimitCreateComment(func(w http.ResponseWriter, r *http.Request) {
 			controllers.CreateComment(w, r, db)
 		}, db),
@@ -52,7 +52,7 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	})
 
 	// Rate limited post creation
-	mux.HandleFunc("/post/createpost", 
+	mux.HandleFunc("/post/createpost",
 		endpointLimiter.LimitCreatePost(func(w http.ResponseWriter, r *http.Request) {
 			controllers.CreatePost(w, r, db)
 		}, db),
@@ -60,22 +60,27 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 
 	// Rate limited reactions
 	mux.HandleFunc("/post/postreaction", func(w http.ResponseWriter, r *http.Request) {
-			controllers.ReactToPost(w, r, db)
-		})
+		controllers.ReactToPost(w, r, db)
+	})
 
 	mux.HandleFunc("/post/commentreaction", func(w http.ResponseWriter, r *http.Request) {
-			controllers.ReactToComment(w, r, db)
-		})
+		controllers.ReactToComment(w, r, db)
+	})
+
+	// Delete post route
+	mux.HandleFunc("/post/delete/{id}", func(w http.ResponseWriter, r *http.Request) {
+		controllers.DeletePost(w, r, db)
+	})
 
 	// Rate limited login
-	mux.HandleFunc("/signin", 
+	mux.HandleFunc("/signin",
 		endpointLimiter.LimitLogin(func(w http.ResponseWriter, r *http.Request) {
 			controllers.Signin(w, r, db)
 		}, db),
 	)
 
 	// Rate limited signup
-	mux.HandleFunc("/signup", 
+	mux.HandleFunc("/signup",
 		endpointLimiter.LimitRegister(func(w http.ResponseWriter, r *http.Request) {
 			controllers.Signup(w, r, db)
 		}, db),
@@ -88,7 +93,6 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		controllers.Logout(w, r, db)
 	})
-
 
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		controllers.GetRegisterPage(w, r, db)
