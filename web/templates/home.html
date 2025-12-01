@@ -43,8 +43,13 @@
                 <a href="/post/{{.ID}}" class="post-comments post-footer-hover">
                     <i class="fa-regular fa-comment"></i>{{.Comments}}
                 </a>
+                <button id="deleteBtn{{.ID}}" onclick="deletePost('{{.ID}}')" class="post-delete post-footer-hover"
+                    style="display: none;">
+                    <i class="fa-solid fa-trash"></i>Delete
+                </button>
             </div>
             <span style="color:red" id="errorlogin{{.ID}}"></span>
+            <span style="color:red" id="errordelete{{.ID}}"></span>
         </div>
         {{end}}
         {{else}}
@@ -63,6 +68,40 @@
         const urlParams = new URLSearchParams(queryString);
         const path = window.location.pathname
         let page = 1
+
+        if (path === '/mycreatedposts') {
+            const deleteButtons = document.querySelectorAll('[id^="deleteBtn"]');
+            deleteButtons.forEach(btn => {
+                btn.style.display = 'inline-block';
+            });
+        }
+
+        function deletePost(postId) {
+            fetch('/post/delete/' + postId, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Failed to delete post');
+                        });
+                    }
+                })
+                .then(data => {
+                    window.location.reload();
+                })
+                .catch(error => {
+                    const errorSpan = document.getElementById('errordelete' + postId);
+                    if (errorSpan) {
+                        errorSpan.textContent = 'Error: ' + error.message;
+                    }
+                });
+        }
 
         if (!isNaN(parseInt(urlParams.get('PageID')))) {
             page = parseInt(urlParams.get('PageID'))

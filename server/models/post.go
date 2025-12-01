@@ -603,3 +603,52 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 
 	return likeCount, dislikeCount, nil
 }
+
+func DeletePost(db *sql.DB, user_id, post_id int) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 500, fmt.Errorf("error starting transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	var postOwnerID int
+	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "select_post_owner",
+		"SELECT user_id FROM posts WHERE id = ?", post_id)
+	err = row.Scan(&postOwnerID)
+	if err != nil {
+		recordError(err)
+		if err == sql.ErrNoRows {
+			return 404, fmt.Errorf("post not found")
+		}
+		return 500, fmt.Errorf("error checking post ownership: %v", err)
+	}
+	recordError(nil)
+
+	if postOwnerID != user_id {
+		return 403, fmt.Errorf("user is not authorized to delete this post")
+	}
+
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	_, err = retry.TryWithResult(ctx, retryConfig, func() (sql.Result, error) {
+		return database.ExecWithMetricsTx(tx, "delete_post", "DELETE FROM posts WHERE id = ?", post_id)
+	})
+	if err != nil {
+		return 500, fmt.Errorf("error deleting post: %v", err)
+	}
+
+	_, err = retry.TryWithResult(ctx, retryConfig, func() (sql.Result, error) {
+		return database.ExecWithMetricsTx(tx, "delete_post_materialized", "DELETE FROM post_materialized_view WHERE post_id = ?", post_id)
+	})
+	if err != nil {
+		return 500, fmt.Errorf("error deleting from materialized view: %v", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 500, fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	return 200, nil
+}
