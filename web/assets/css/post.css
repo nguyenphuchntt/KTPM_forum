@@ -129,10 +129,10 @@
 .post-footer {
     display: flex;
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     gap: 10px;
-    max-width: 200px;
+    max-width: none;
     /* border: #2761f0 solid 1px; */
     margin: 0 10px 10px 20px;
 }
@@ -158,6 +158,24 @@
 .post-footer-hover:hover {
     cursor: pointer;
     background-color: var(--color-bg-variant-hover);
+}
+
+.post-delete {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.post-delete i,
+.post-footer i {
+    font-size: 13px;
+    vertical-align: middle;
+    line-height: 1;
+}
+
+.post-delete:hover {
+    background-color: #fcc;
+    color: #900;
 }
 
 .no-posts {

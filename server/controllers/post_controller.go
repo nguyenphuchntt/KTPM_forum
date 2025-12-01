@@ -565,3 +565,46 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"likesCount": likeCount, "dislikesCount": dislikeCount})
 }
+
+func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var user_id int
+	var valid bool
+	user_id, _, valid = models.ValidSession(r, db);
+	if  !valid {
+		w.WriteHeader(401)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	log := logger.WithRequest(r, user_id)
+
+	postID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		log.Warn().Str("post_id", r.PathValue("id")).Msg("Invalid post ID")
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid post ID"})
+		return
+	}
+
+	statusCode, err := models.DeletePost(db, user_id, postID)
+	if err != nil {
+		log.Error().Err(err).Int("post_id", postID).Msg("Failed to delete post")
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	cache.AppCache.Delete("index_posts_page_0")
+	cache.AppCache.Delete("post_" + strconv.Itoa(postID))
+	for i := 0; i < 10; i++ {
+		cache.AppCache.Delete(fmt.Sprintf("user_posts_%d_page_%d", user_id, i))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Post deleted successfully"})
+}
