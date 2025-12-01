@@ -49,7 +49,7 @@ func configureCORS(serviceURL azblob.ServiceURL, accountName string) {
 	corsRules := []azblob.CorsRule{
 		{
 			AllowedOrigins:  "*",
-			AllowedMethods:  "GET,POST,PUT,OPTIONS,DELETE",
+			AllowedMethods:  "GET,HEAD,POST,PUT,OPTIONS,DELETE",
 			AllowedHeaders:  "*",
 			ExposedHeaders:  "*",
 			MaxAgeInSeconds: 3600,

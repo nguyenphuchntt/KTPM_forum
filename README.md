@@ -1,4 +1,13 @@
 # Giới thiệu dự án gốc
+Ứng dụng forum xây dựng bằng ngôn ngữ Golang, cho phép người dùng tương tác với nhau thông qua các bài đăng, bình luận và reaction.
+
+## Tác giả
+- Abdelhamid Bouziani
+- Hamza Maach
+- Omar Ait Benhammou
+- Mehdi Moulabbi
+- Youssef Basta
+
 ## Tính năng chính
 ### 1. Authentication & Session Management
 - *Cơ chế:* Cookie-based Authentication.

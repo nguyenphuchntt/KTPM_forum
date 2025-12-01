@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"forum/server/validation"
@@ -69,7 +70,8 @@ func StartQuarantineWatcher(connectionString string) {
 				}
 
 				for _, blob := range listBlob.Segment.BlobItems {
-					processBlob(ctx, serviceURL, quarantineURL, productionURL, blob.Name)
+					// Process concurrently for speed
+					go processBlob(ctx, serviceURL, quarantineURL, productionURL, blob.Name)
 				}
 
 				marker = listBlob.NextMarker
@@ -80,7 +82,7 @@ func StartQuarantineWatcher(connectionString string) {
 
 			// Wait before next poll
 			pollIntervalStr := os.Getenv("QUARANTINE_POLL_INTERVAL")
-			pollInterval := 1 * time.Second // Default to 1s for better UX
+			pollInterval := 200 * time.Millisecond // Default to 200ms for snappy UX
 			
 			if val, err := time.ParseDuration(pollIntervalStr); err == nil {
 				pollInterval = val
@@ -94,44 +96,37 @@ func StartQuarantineWatcher(connectionString string) {
 func processBlob(ctx context.Context, serviceURL azblob.ServiceURL, quarantineURL, productionURL azblob.ContainerURL, blobName string) {
 	log.Printf("[WATCHER] Processing %s...", blobName)
 
-	// 1. Download
+	// 1. Partial Download (First 512 bytes only)
 	blobURL := quarantineURL.NewBlobURL(blobName)
-	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
+	
+	// Download only first 512 bytes
+	downloadResponse, err := blobURL.Download(ctx, 0, 512, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
-		log.Printf("[WATCHER] Failed to download %s: %v", blobName, err)
+		log.Printf("[WATCHER] Failed to download header of %s: %v", blobName, err)
 		return
 	}
 	reader := downloadResponse.Body(azblob.RetryReaderOptions{MaxRetryRequests: 3})
 	defer reader.Close()
 
-	// Save to temp file
-	tempFile, err := os.CreateTemp("", "promote-*")
+	// Read into buffer
+	headerBytes, err := io.ReadAll(reader)
 	if err != nil {
-		log.Printf("[WATCHER] Failed to create temp file: %v", err)
-		return
-	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
-
-	if _, err := io.Copy(tempFile, reader); err != nil {
-		log.Printf("[WATCHER] Failed to write temp file: %v", err)
+		log.Printf("[WATCHER] Failed to read header bytes: %v", err)
 		return
 	}
 
-	// Reset pointer
-	if _, err := tempFile.Seek(0, 0); err != nil {
-		log.Printf("[WATCHER] Failed to seek temp file: %v", err)
-		return
-	}
+	// Create a bytes reader for validation
+	headerReader := bytes.NewReader(headerBytes)
 
-	// 2. Validate
+	// 2. Validate (Magic Bytes ONLY)
+	// We skip ImageIntegrityFilter because we don't have the full file
 	pipeline := validation.NewPipeline()
 	pipeline.AddFilter(filters.NewMagicBytesFilter())
-	pipeline.AddFilter(&filters.ImageIntegrityFilter{})
+	// pipeline.AddFilter(&filters.ImageIntegrityFilter{}) // Disabled for speed
 
 	valCtx := &validation.ValidationContext{
 		Filename: blobName,
-		Reader:   tempFile,
+		Reader:   headerReader, // Only contains first 512 bytes
 		Metadata: make(map[string]interface{}),
 	}
 
