@@ -9,43 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"fmt"
-	"forum/server/cache"
 	"forum/server/config"
 	"forum/server/logger"
 	"forum/server/models"
 	"forum/server/utils"
 )
-
-func getPostFromCache(cacheKey string) ([]models.Post, bool) {
-	cachedData, found := cache.AppCache.Get(cacheKey)
-	if !found {
-		return nil, false
-	}
-
-	posts, ok := cachedData.([]models.Post)
-	if !ok {
-		cache.AppCache.Delete(cacheKey)
-		return nil, false
-	}
-
-	return posts, true
-}
-
-func getPostDetailFromCache(cacheKey string) (models.PostDetail, bool) {
-	cachedData, found := cache.AppCache.Get(cacheKey)
-	if !found {
-		return models.PostDetail{}, false
-	}
-
-	postDetail, ok := cachedData.(models.PostDetail)
-	if !ok {
-		cache.AppCache.Delete(cacheKey)
-		return models.PostDetail{}, false
-	}
-
-	return postDetail, true
-}
 
 func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
@@ -74,26 +42,6 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		page = 0
 	}
 
-	cacheKey := "index_posts_page_" + strconv.Itoa(page)
-
-	posts, found := getPostFromCache(cacheKey)
-	if found {
-		log.Info().
-			Str("cache_key", cacheKey).
-			Bool("cache_hit", true).
-			Int("post_count", len(posts)).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Posts fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
-			log.Error().Err(err).Msg("Error rendering template")
-			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
-		}
-		return
-	}
-
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
-	// If cache miss
 	posts, statusCode, err := models.FetchPosts(db, page)
 	if err != nil {
 		log.Error().
@@ -112,9 +60,6 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if err == nil && posts != nil {
-		cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
-	}
 
 	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
@@ -165,24 +110,6 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		page = 0
 	}
 
-	cacheKey := fmt.Sprintf("category_posts_%d_page_%d", id, int(page))
-
-	posts, found := getPostFromCache(cacheKey)
-	if found {
-		log.Info().
-			Str("cache_key", cacheKey).
-			Bool("cache_hit", true).
-			Int("post_count", len(posts)).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Category posts fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
-			log.Error().Err(err).Msg("Error rendering template")
-			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
-		}
-		return
-	}
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
 	// If cache miss
 	posts, statusCode, err := models.FetchPostsByCategory(db, id, page)
 	if err != nil {
@@ -200,10 +127,6 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		log.Warn().Int("page", page).Int("category_id", id).Msg("No posts found for category page")
 		utils.RenderError(db, w, r, 404, valid, username)
 		return
-	}
-
-	if err == nil && posts != nil {
-		cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
 	}
 
 	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
@@ -242,26 +165,6 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cacheKey := "post_" + strconv.Itoa(postID)
-
-	postDetail, found := getPostDetailFromCache(cacheKey)
-	if found {
-		log.Info().
-			Int("post_id", postID).
-			Bool("cache_hit", true).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Post fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, postDetail, valid, username); err != nil {
-			log.Error().Err(err).Msg("Error rendering template")
-			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
-		}
-		// If type assertion failed, delete invalid cache
-		cache.AppCache.Delete(cacheKey)
-	}
-
-	// If cache miss
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
 	postDetail, statusCode, err := models.FetchPost(db, postID)
 	if err != nil {
 		log.Error().
@@ -272,11 +175,6 @@ func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			Msg("Failed to fetch post")
 		utils.RenderError(db, w, r, statusCode, valid, username)
 		return
-	}
-
-	// Cache the entire PostDetail, not just the Post
-	if err == nil && postDetail.Post.ID != 0 {
-		cache.AppCache.Set(cacheKey, postDetail, config.CacheTTL)
 	}
 
 	err = utils.RenderTemplate(db, w, r, "post", statusCode, postDetail, valid, username)
@@ -424,11 +322,6 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cache.AppCache.Delete("index_posts_page_0")
-	for i := 0; i < len(catidsInt); i++ {
-		cache.AppCache.Delete("category_posts_" + strconv.Itoa(catidsInt[i]) + "_page_0")
-	}
-
 	log.Info().
 		Int64("post_id", pid).
 		Str("title", title).
@@ -558,9 +451,6 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cache.AppCache.Delete("index_posts_page_0")
-	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
-
 	// Return the new count as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"likesCount": likeCount, "dislikesCount": dislikeCount})
@@ -598,11 +488,6 @@ func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cache.AppCache.Delete("index_posts_page_0")
-	cache.AppCache.Delete("post_" + strconv.Itoa(postID))
-	for i := 0; i < 10; i++ {
-		cache.AppCache.Delete(fmt.Sprintf("user_posts_%d_page_%d", user_id, i))
-	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
