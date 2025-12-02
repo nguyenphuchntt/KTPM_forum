@@ -1,8 +1,5 @@
-// UploadManager - Orchestrates the complete upload flow
-// 1. Validate client-side
-// 2. Request SAS token from server
-// 3. Upload to Azure quarantine
-// 4. Poll validation status
+const maxAttempts = 4;
+
 import { createImageValidationPipeline } from './validation/index.js';
 
 class UploadManager {
@@ -72,19 +69,36 @@ class UploadManager {
         return response.json();
     }
 
-    async uploadToAzure(file, sasURL) {
-        const response = await fetch(sasURL, {
-            method: 'PUT',
-            headers: {
-                'x-ms-blob-type': 'BlockBlob',
-                'Content-Type': file.type
-            },
-            body: file
-        });
+    sleep(time) {
+        return new Promise(resolve => setTimeout(resolve, time));
+    }
 
-        if (!response.ok) {
-            throw new Error('Upload lên cloud thất bại');
+    async uploadToAzure(file, sasURL) {
+        let lastError;
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                console.log("trying attempt ", i);
+                const response = await fetch(sasURL, {
+                    method: 'PUT',
+                    headers: {
+                        'x-ms-blob-type': 'BlockBlob',
+                        'Content-Type': file.type
+                    },
+                    body: file
+                });          
+                if (response.ok) {
+                    return;
+                } else {
+                    throw new Error(`Failed to upload ${response.status}`);
+                }                
+            } catch (error) {
+                lastError = error;
+                if (i < maxAttempts) {
+                    await this.sleep(1000);
+                }
+            }
         }
+        throw new Error(`Failed to upload after ${maxAttempts} attempts: ${lastError.message}`);
     }
 }
 

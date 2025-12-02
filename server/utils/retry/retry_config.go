@@ -45,7 +45,7 @@ func InitDatabaseConnectionRetryConfig() RetryConfig {
 // database read operations 
 func DatabaseQueryRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts: 2,
+		MaxAttempts: 5,
 		InitialDelay: 200 * time.Millisecond,
 		MaxDelay: 1 * time.Second,
 		Strategy: ExponentialBackoff,
@@ -55,7 +55,7 @@ func DatabaseQueryRetryConfig() RetryConfig {
 // database write operations
 func DatabaseWriteRetryConfig() RetryConfig {
 	return RetryConfig {
-		MaxAttempts: 2,
+		MaxAttempts: 3,
 		InitialDelay: 500 * time.Millisecond,
 		MaxDelay: 1 * time.Second,
 		Strategy: ExponentialBackoff,
