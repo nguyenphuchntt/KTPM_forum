@@ -106,6 +106,127 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 	return posts, 200, nil
 }
 
+// Returns posts given their IDs
+func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[int]Post, error) {
+	if len(postIDs) == 0 {
+		return make(map[int]Post), nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	placeholders := make([]string, len(postIDs))
+	args := make([]interface{}, len(postIDs))
+	for i, id := range postIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`SELECT
+		post_id,
+		user_id,
+		username,
+		title,
+		content,
+		image_path,
+		DATE_FORMAT(created_at, '%%m/%%d/%%Y %%I:%%M %%p') AS formatted_created_at,
+		like_count,
+		dislike_count,
+		comment_count,
+		categories_str
+	FROM
+		post_materialized_view
+	WHERE post_id IN (%s)
+	ORDER BY created_at DESC`, strings.Join(placeholders, ","))
+
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return database.QueryWithMetrics(db, "select_posts_by_ids", query, args...)
+	})
+	if err != nil {
+		log.Println("Error executing query:", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int]Post)
+	for rows.Next() {
+		var post Post
+		var imagePath sql.NullString
+		var categoriesStr sql.NullString
+
+		err := rows.Scan(&post.ID, &post.UserID, &post.UserName, &post.Title,
+			&post.Content, &imagePath, &post.CreatedAt, &post.Likes,
+			&post.Dislikes, &post.Comments, &categoriesStr)
+		if err != nil {
+			log.Println("Error scanning row:", err)
+			return nil, err
+		}
+
+		post.ImagePath = imagePath.String
+		post.CategoriesStr = categoriesStr.String
+		if post.CategoriesStr != "" {
+			post.Categories = strings.Split(post.CategoriesStr, ",")
+		} else {
+			post.Categories = []string{}
+		}
+
+		result[post.ID] = post
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("Error iterating rows:", err)
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func FetchPostIDsByTimestamp(db *sql.DB, offset, limit int) ([]int, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT post_id, DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at
+		FROM post_materialized_view
+		ORDER BY created_at DESC, post_id DESC
+		LIMIT ? OFFSET ?`
+
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return database.QueryWithMetrics(db, "select_post_ids_page", query, limit, offset)
+	})
+	if err != nil {
+		log.Println("Error executing query:", err)
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var postIDs []int
+	var firstTimestamp string
+
+	for rows.Next() {
+		var id int
+		var timestamp string
+		if err := rows.Scan(&id, &timestamp); err != nil {
+			log.Println("Error scanning row:", err)
+			return nil, "", err
+		}
+
+		postIDs = append(postIDs, id)
+		if firstTimestamp == "" {
+			firstTimestamp = timestamp
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("Error iterating rows:", err)
+		return nil, "", err
+	}
+
+	return postIDs, firstTimestamp, nil
+}
+
 func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 	var post Post
 	post.ID = postID
@@ -248,6 +369,53 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 	}
 
 	return posts, 200, nil
+}
+
+func FetchPostIDsForCategoryPage(db *sql.DB, categoryID, offset, limit int) ([]int, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT pmv.post_id, DATE_FORMAT(pmv.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at
+		FROM post_materialized_view pmv
+		INNER JOIN post_category pc ON pmv.post_id = pc.post_id
+		WHERE pc.category_id = ?
+		ORDER BY pmv.created_at DESC, pmv.post_id DESC
+		LIMIT ? OFFSET ?`
+
+	retryConfig := retry.DatabaseQueryRetryConfig()
+	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
+		return database.QueryWithMetrics(db, "select_post_ids_category_page", query, categoryID, limit, offset)
+	})
+	if err != nil {
+		log.Println("Error executing query:", err)
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var postIDs []int
+	var firstTimestamp string
+
+	for rows.Next() {
+		var id int
+		var timestamp string
+		if err := rows.Scan(&id, &timestamp); err != nil {
+			log.Println("Error scanning row:", err)
+			return nil, "", err
+		}
+
+		postIDs = append(postIDs, id)
+		if firstTimestamp == "" {
+			firstTimestamp = timestamp
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("Error iterating rows:", err)
+		return nil, "", err
+	}
+
+	return postIDs, firstTimestamp, nil
 }
 
 func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, int, error) {
