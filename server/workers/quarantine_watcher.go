@@ -95,6 +95,13 @@ func StartQuarantineWatcher(connectionString string) {
 
 func processBlob(ctx context.Context, serviceURL azblob.ServiceURL, quarantineURL, productionURL azblob.ContainerURL, blobName string) {
 	log.Printf("[WATCHER] Processing %s...", blobName)
+	
+	const MaxFileSize = 5 * 1024 * 1024 // 5MB
+	if blob.Properties.ContentLength != nil && *blob.Properties.ContentLength > MaxFileSize {
+		log.Printf("[WATCHER] File %s is too large (%d bytes). Deleting...", blobName, *blob.Properties.ContentLength)
+		quarantineURL.NewBlobURL(blobName).Delete(ctx, azblob.DeleteSnapshotsOptionInclude, azblob.BlobAccessConditions{})
+		return
+	}
 
 	// 1. Partial Download (First 512 bytes only)
 	blobURL := quarantineURL.NewBlobURL(blobName)
