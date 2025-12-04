@@ -71,7 +71,11 @@ func StartQuarantineWatcher(connectionString string) {
 
 				for _, blob := range listBlob.Segment.BlobItems {
 					// Process concurrently for speed
-					go processBlob(ctx, serviceURL, quarantineURL, productionURL, blob.Name)
+					var size int64
+					if blob.Properties.ContentLength != nil {
+						size = *blob.Properties.ContentLength
+					}
+					go processBlob(ctx, serviceURL, quarantineURL, productionURL, blob.Name, size)
 				}
 
 				marker = listBlob.NextMarker
@@ -93,12 +97,13 @@ func StartQuarantineWatcher(connectionString string) {
 	}()
 }
 
-func processBlob(ctx context.Context, serviceURL azblob.ServiceURL, quarantineURL, productionURL azblob.ContainerURL, blobName string) {
+func processBlob(ctx context.Context, serviceURL azblob.ServiceURL, quarantineURL, productionURL azblob.ContainerURL, blobName string, size int64) {
 	log.Printf("[WATCHER] Processing %s...", blobName)
-	
+
+	// 0. Validate Size (Prevent "Bait and Switch" large files)
 	const MaxFileSize = 5 * 1024 * 1024 // 5MB
-	if blob.Properties.ContentLength != nil && *blob.Properties.ContentLength > MaxFileSize {
-		log.Printf("[WATCHER] File %s is too large (%d bytes). Deleting...", blobName, *blob.Properties.ContentLength)
+	if size > MaxFileSize {
+		log.Printf("[WATCHER] File %s is too large (%d bytes). Deleting...", blobName, size)
 		quarantineURL.NewBlobURL(blobName).Delete(ctx, azblob.DeleteSnapshotsOptionInclude, azblob.BlobAccessConditions{})
 		return
 	}
