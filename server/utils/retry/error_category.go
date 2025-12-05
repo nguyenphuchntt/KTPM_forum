@@ -12,6 +12,7 @@ func IsNonRetryableError(err error) bool {
 	errorMessage := strings.ToLower(err.Error())
 
 	nonRetryablePatterns := []string{
+		"sql: no rows in result set",           // Normal query result, should not retry
 		"duplicate entry",                      // MySQL Error 1062
 		"duplicate key",                        // Constraint violation
 		"foreign key constraint",               // MySQL Error 1452

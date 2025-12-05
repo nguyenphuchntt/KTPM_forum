@@ -23,7 +23,7 @@ func Connect() (*sql.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true", user, password, host, port, database)
 	log.Printf("Trying to connect to database")
 
-	ctx, cancelF := context.WithTimeout(context.Background(), 2 * time.Minute)
+	ctx, cancelF := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelF()
 
 	retryConfig := retry.InitDatabaseConnectionRetryConfig()
@@ -45,6 +45,15 @@ func Connect() (*sql.DB, error) {
 		return nil, fmt.Errorf("failed create database connection after maximum attempts with error: %v", err)
 	}
 
+	poolConfig := LoadDBPoolConfigFromEnv()
+	db.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	db.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	db.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(poolConfig.ConnMaxIdleTime)
+
 	log.Printf("Successfully create database connection")
+	log.Printf("Connection pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v, MaxIdleTime=%v",
+		poolConfig.MaxOpenConns, poolConfig.MaxIdleConns,
+		poolConfig.ConnMaxLifetime, poolConfig.ConnMaxIdleTime)
 	return db, nil
 }

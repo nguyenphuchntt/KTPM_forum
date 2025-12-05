@@ -19,7 +19,9 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	endpointLimiter := middleware.NewEndpointRateLimiter(db, rateLimitConfig)
 
 	// serve static files (no rate limiting on assets)
-	mux.HandleFunc("/assets/", controllers.ServeStaticFiles)
+	mux.HandleFunc("/assets/", func(w http.ResponseWriter, r *http.Request) {
+		controllers.ServeStaticFiles(db, w, r)
+	})
 
 	// routes to get pages
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
