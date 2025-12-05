@@ -1,29 +1,33 @@
 package models
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"forum/server/utils/retry"
 	"net/http"
 	"time"
-	// "forum/server/utils/retry"
-	"context"
 
 	"forum/server/cache"
-	// "forum/server/database"
+	"forum/server/database"
 )
 
 func StoreSession(db *sql.DB, user_id int, session_id string, expires_at time.Time) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
+	retryConfig := retry.DatabaseWriteRetryConfig()
 
-	_, err := db.ExecContext(ctx, query, user_id, session_id, expires_at)
-	if err != nil {
-		return fmt.Errorf("%v", err)
-	}
+	return retry.Try(ctx, retryConfig, func() error {
+		query := `REPLACE INTO sessions (user_id,session_id,expires_at) VALUES (?,?,?)`
 
-	return nil
+		_, err := database.ExecWithMetrics(db, "insert_session", query, user_id, session_id, expires_at)
+		if err != nil {
+			return fmt.Errorf("%v", err)
+		}
+
+		return nil
+	})
 }
 
 func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
@@ -52,16 +56,16 @@ func ValidSession(r *http.Request, db *sql.DB) (int, string, bool) {
 			INNER JOIN users u ON s.user_id = u.id 
 			WHERE session_id = ?
 		`
+	retryConfig := retry.DatabaseQueryRetryConfig()
 	var expiration time.Time
 	var user_id int
 	var username string
-
-	row := db.QueryRowContext(ctx, query, cookie.Value)
-	err = row.Scan(&user_id, &expiration, &username)
-
-	if err != nil || expiration.Before(time.Now()) {
-		return -1, "", false
-	}
+	err = retry.Try(ctx, retryConfig, func() error {
+		row, recordError := database.QueryRowWithMetricsAndError(db, "select_session", query, cookie.Value)
+		err = row.Scan(&user_id, &expiration, &username)
+		recordError(err)
+		return err
+	})
 
 	// Cache the valid session
 	if cache.GlobalSessionCache != nil {
@@ -75,11 +79,9 @@ func DeleteUserSession(db *sql.DB, userID int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Invalidate cache
-	if cache.GlobalSessionCache != nil {
-		cache.GlobalSessionCache.DeleteByUserID(userID)
-	}
-
-	_, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?;`, userID)
-	return err
+	retryConfig := retry.DatabaseWriteRetryConfig()
+	return retry.Try(ctx, retryConfig, func() error {
+		_, err := database.ExecWithMetrics(db, "delete_session", `DELETE FROM sessions WHERE user_id = ?;`, userID)
+		return err
+	})
 }

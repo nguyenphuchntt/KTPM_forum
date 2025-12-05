@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	// "forum/server/utils/retry"
+	"forum/server/utils/retry"
 	"time"
 
 	"forum/server/database"
@@ -58,36 +58,39 @@ func FetchCommentsByPostID(postID int, db *sql.DB) ([]Comment, error) {
 		ORDER BY
 			c.created_at DESC
 		`
+	retryConfig := retry.DatabaseQueryRetryConfig()
 
-	var comments []Comment
+	return retry.TryWithResult(ctx, retryConfig, func() ([]Comment, error) {
+		var comments []Comment
 
-	rows, err := db.QueryContext(ctx, query, postID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var comment Comment
-		err := rows.Scan(
-			&comment.ID,
-			&comment.UserID,
-			&comment.UserName,
-			&comment.Content,
-			&comment.CreatedAt,
-			&comment.Likes,
-			&comment.Dislikes,
-		)
+		rows, err := database.QueryWithMetrics(db, "select_comments", query, postID)
 		if err != nil {
 			return nil, err
 		}
+		defer rows.Close()
 
-		comment.PostID = postID
+		for rows.Next() {
+			var comment Comment
+			err := rows.Scan(
+				&comment.ID,
+				&comment.UserID,
+				&comment.UserName,
+				&comment.Content,
+				&comment.CreatedAt,
+				&comment.Likes,
+				&comment.Dislikes,
+			)
+			if err != nil {
+				return nil, err
+			}
 
-		comments = append(comments, comment)
-	}
+			comment.PostID = postID
 
-	return comments, nil
+			comments = append(comments, comment)
+		}
+
+		return comments, nil
+	})
 }
 
 func StoreComment(db *sql.DB, user_id, post_id int, content string) (int64, error) {
