@@ -48,11 +48,9 @@ func main() {
 		logger.Log.Fatal().Err(err).Msg("Database connection error")
 	}
 
-	// Initialize session cache (5 second TTL to reduce DB load)
 	cache.InitSessionCache(5 * time.Second)
 	logger.Log.Info().Msg("Session cache initialized with 5s TTL")
 
-	// Initialize category cache (5 minute TTL)
 	cache.GlobalCategoryCache = cache.NewCategoryCache(5 * time.Minute)
 	if err := cache.GlobalCategoryCache.LoadCategories(db); err != nil {
 		logger.Log.Fatal().Err(err).Msg("Failed to initialize category cache")

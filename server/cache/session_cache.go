@@ -25,8 +25,6 @@ func InitSessionCache(ttl time.Duration) {
 		cache: make(map[string]SessionCacheEntry),
 		ttl:   ttl,
 	}
-
-	// Start cleanup goroutine
 	go GlobalSessionCache.cleanup()
 }
 
@@ -39,12 +37,10 @@ func (sc *SessionCache) Get(sessionID string) (SessionCacheEntry, bool) {
 		return SessionCacheEntry{}, false
 	}
 
-	// Check if cached entry is still valid
 	if time.Now().After(entry.CachedAt.Add(sc.ttl)) {
 		return SessionCacheEntry{}, false
 	}
 
-	// Check if session itself has expired
 	if time.Now().After(entry.ExpiresAt) {
 		return SessionCacheEntry{}, false
 	}
@@ -90,7 +86,6 @@ func (sc *SessionCache) cleanup() {
 		sc.mu.Lock()
 		now := time.Now()
 		for sessionID, entry := range sc.cache {
-			// Remove if cache TTL expired or session expired
 			if now.After(entry.CachedAt.Add(sc.ttl)) || now.After(entry.ExpiresAt) {
 				delete(sc.cache, sessionID)
 			}

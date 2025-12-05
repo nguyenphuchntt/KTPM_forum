@@ -16,7 +16,7 @@ type CategoryInfo struct {
 type CategoryCache struct {
 	mu            sync.RWMutex
 	categories    []CategoryInfo
-	categoryMap   map[int]CategoryInfo  // For O(1) lookup by ID
+	categoryMap   map[int]CategoryInfo 
 	lastRefresh   time.Time
 	refreshTTL    time.Duration
 }

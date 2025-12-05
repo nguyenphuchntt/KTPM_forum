@@ -59,7 +59,6 @@ func FetchCategories(db *sql.DB) ([]Category, error) {
 }
 
 func CheckCategories(db *sql.DB, ids []int) error {
-	// Use cache if available - O(n) validation instead of DB query
 	if cache.GlobalCategoryCache != nil {
 		if cache.GlobalCategoryCache.ValidateIDs(ids) {
 			return nil
@@ -67,7 +66,6 @@ func CheckCategories(db *sql.DB, ids []int) error {
 		return fmt.Errorf("categories does not exists in db")
 	}
 
-	// Fallback to database query if cache not available
 	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
 
