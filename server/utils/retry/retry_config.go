@@ -35,7 +35,7 @@ func DefaultRetryConfig() RetryConfig {
 // create connection to database retry config 
 func InitDatabaseConnectionRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts: 5,
+		MaxAttempts: 20,
 		InitialDelay: 1 * time.Second,
 		MaxDelay: 30 * time.Second,
 		Strategy: ExponentialBackoff,
