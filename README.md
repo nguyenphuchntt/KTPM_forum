@@ -51,13 +51,31 @@
 4.  *Quarantine:* Quarantine Watcher sẽ theo dõi file upload lên Quarantine Container và lấy và lấy về 512B đầu tiên của file để kiểm tra chữ ký file trước khi đưa qua Container chính.
 ---
 ## Kết quả kiểm thử hiệu năng
-Hệ thống đã được kiểm thử tải với 100 Virtual Users (VUs) liên tục. Kết quả so sánh giữa phiên bản gốc và phiên bản tối ưu:
-| Tiêu chí | Trước | Optimized | Mức độ cải thiện |
+Hệ thống đã được kiểm thử tải với 100 Virtual Users (VUs) liên tục, thự hiện ba kịch bản kiểm thử sau:
+- Kịch bản 1: 100VUs read-only liên tục trong 1 phút (50% truy cập vào /category/page, 50% truy cập vào /post_id)
+- Kịch bản 2: 100VUs write-only liên tục trong 1 phút (tạo post mới)
+- Kịch bản 3: 100VUs kết hợp write và read (50% tạo post mới, 25% truy cập vào /category/page, 25% truy cập vào /post_id)
+
+Kết quả so sánh giữa phiên bản gốc và phiên bản tối ưu:
+
+| Kịch bản | Chỉ số | Trước cải tiến | Sau cải tiến |
 | :--- | :--- | :--- | :--- |
-| *Virtual Users* | 100 | 100 | - |
-| *Avg Response Time* | 1.58s (1580ms) | *125.58ms* |  *Nhanh hơn ~12.5 lần* |
-| *P(95) Response Time* | 4.17s | *313.19ms* |  *Nhanh hơn ~13.3 lần* |
-| *Request Rate (RPS)* | 21.28 reqs/s | *32.20 reqs/s* |  *Tăng 51%* |
+| **Tổng thể** | Tổng req | 10,628 | 12,655 |
+| | Req rate | 49.34 | 59.15 |
+| | Failed req rate | 22.59% | **0.00%** |
+| **Read Only** | Response Time P95 | 642.91ms | **8.84ms** |
+| | Response Time Avg | 307.47ms | 7.26ms |
+| | Response Time Max | 1,464ms | 233.64ms |
+| | Success rate | 99.63% | 100.00% |
+| **Write Only** | Response Time P95 | - | 647.18ms |
+| | Response Time Avg | - | 161.89ms |
+| | Response Time Max | - | 929.90ms |
+| | Success rate | 0% (Thất bại toàn bộ) | **100.00%** |
+| **Mix (50/50)** | Response Time P95 | 5,023ms | **82.74ms** |
+| | Response Time Avg | 1,434ms | 40.95ms |
+| | Response Time Max | 10,658ms | 658.21ms |
+| | Create Posts success rate | 0% | 100.00% |
+
 ---
 ## Cài đặt
 ### 1. Clone Repository
@@ -79,5 +97,4 @@ docker compose up –build -d
 Ứng dụng chạy trên localhost:8080.
 Theo dõi các thông số của hệ thống tại localhost:3000
 
-
-
+# Báo cáo đầy đủ [pdf](./docs/report.pdf)
