@@ -16,8 +16,8 @@ type DBPoolConfig struct {
 
 func DefaultDBPoolConfig() *DBPoolConfig {
 	return &DBPoolConfig{
-		MaxOpenConns:    25,             
-		MaxIdleConns:    10,              
+		MaxOpenConns:    100,             
+		MaxIdleConns:    25,              
 		ConnMaxLifetime: 5 * time.Minute, 
 		ConnMaxIdleTime: 2 * time.Minute, 
 	}

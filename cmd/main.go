@@ -9,6 +9,7 @@ import (
 	"time"
 	"runtime"
 
+	"forum/server/cache"
 	"forum/server/cloud"
 	"forum/server/config"
 	"forum/server/controllers"
@@ -46,6 +47,18 @@ func main() {
 	if err != nil {
 		logger.Log.Fatal().Err(err).Msg("Database connection error")
 	}
+
+	// Initialize session cache (5 second TTL to reduce DB load)
+	cache.InitSessionCache(5 * time.Second)
+	logger.Log.Info().Msg("Session cache initialized with 5s TTL")
+
+	// Initialize category cache (5 minute TTL)
+	cache.GlobalCategoryCache = cache.NewCategoryCache(5 * time.Minute)
+	if err := cache.GlobalCategoryCache.LoadCategories(db); err != nil {
+		logger.Log.Fatal().Err(err).Msg("Failed to initialize category cache")
+	}
+	cache.GlobalCategoryCache.StartAutoRefresh(db)
+	logger.Log.Info().Msg("Category cache initialized with 5m TTL and auto-refresh")
 
 	// Initialize Azure Storage (for image uploads)
 	connectionString := os.Getenv("AZURE_STORAGE_CONNECTION_STRING")

@@ -4,6 +4,14 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G
+        reservations:
+          cpus: "2.0"
+          memory: 1G
     environment:
       - DB_DRIVER=mysql
       - DB_SOURCE=user:password@tcp(db:3306)/forum_db?parseTime=true
@@ -31,6 +39,7 @@ services:
       - REACTIONS_PER_MINUTE=${REACTIONS_PER_MINUTE}
       - UPLOAD_REQUESTS_PER_MINUTE=${UPLOAD_REQUESTS_PER_MINUTE}
       - ENABLE_QUARANTINE_WATCHER=true
+      - GOMAXPROCS=4
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +47,14 @@ services:
 
   db:
     image: mysql:8.0
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: forum_db
@@ -56,6 +73,14 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -68,6 +93,14 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
