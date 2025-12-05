@@ -17,19 +17,34 @@ import (
 	"forum/server/utils"
 )
 
-func getPostFromCache(cacheKey string) ([]models.Post, bool) {
-	cachedData, found := cache.AppCache.Get(cacheKey)
+// cache post by its ID
+func cachePost(post models.Post) {
+	key := "post_" + strconv.Itoa(post.ID)
+	cache.AppCache.Set(key, post, config.CacheTTL)
+}
+
+func getCachedPostByID(postID int) (models.Post, bool) {
+	key := fmt.Sprintf("post_%d", postID)
+	data, found := cache.AppCache.Get(key)
 	if !found {
-		return nil, false
+		return models.Post{}, false
 	}
-
-	posts, ok := cachedData.([]models.Post)
+	post, ok := data.(models.Post)
 	if !ok {
-		cache.AppCache.Delete(cacheKey)
-		return nil, false
+		cache.AppCache.Delete(key)
+		return models.Post{}, false
 	}
+	return post, true
+}
 
-	return posts, true
+func getCachedPosts(postIDs []int) map[int]models.Post {
+	result := make(map[int]models.Post)
+	for _, id := range postIDs {
+		if post, found := getCachedPostByID(id); found {
+			result[id] = post
+		}
+	}
+	return result
 }
 
 func getPostDetailFromCache(cacheKey string) (models.PostDetail, bool) {
@@ -69,65 +84,74 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
 		return
 	}
-	page = (page - 1) * 10
-	if page < 0 {
-		page = 0
+	offset := (page - 1) * 10
+	if offset < 0 {
+		offset = 0
 	}
 
-	cacheKey := "index_posts_page_" + strconv.Itoa(page)
+	// query postIDs for this page
+	postIDs, firstTimestamp, err := models.FetchPostIDsByTimestamp(db, offset, 10)
+	if err != nil {
+		log.Error().Err(err).Int("offset", offset).Msg("Failed to fetch post IDs")
+		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		return
+	}
 
-	posts, found := getPostFromCache(cacheKey)
-	if found {
-		log.Info().
-			Str("cache_key", cacheKey).
-			Bool("cache_hit", true).
-			Int("post_count", len(posts)).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Posts fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
+	if len(postIDs) == 0 {
+		if offset > 0 {
+			log.Warn().Int("offset", offset).Msg("No posts found for offset")
+			utils.RenderError(db, w, r, 404, valid, username)
+			return
+		}
+				// Empty first page is OK when there were no posts
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []models.Post{}, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
 		return
 	}
-
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
-	// If cache miss
-	posts, statusCode, err := models.FetchPosts(db, page)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Int("status", statusCode).
-			Int("page", page).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Failed to fetch posts")
-		utils.RenderError(db, w, r, statusCode, valid, username)
-		return
+	
+	cachedPosts := getCachedPosts(postIDs)
+	missingPostIDs := []int{}
+	for _, id := range postIDs {
+		if _, found := cachedPosts[id]; !found { // không tồn tại key này 
+			missingPostIDs = append(missingPostIDs, id)
+		}
+	}
+	// fetch missing posts 
+	if len(missingPostIDs) > 0 {
+		dbPosts, err := models.FetchPostsByIDs(db, missingPostIDs)
+		if err != nil {
+			log.Error().Err(err).Ints("missing_ids", missingPostIDs).Msg("Failed to fetch missing posts")
+		} else {
+			for id, post := range dbPosts {
+				cachedPosts[id] = post
+				cachePost(post)
+			}
+		}
 	}
 
-	if posts == nil && page > 0 {
-		log.Warn().Int("page", page).Msg("No posts found for page")
-		utils.RenderError(db, w, r, 404, valid, username)
-		return
+	// posts array in correct order -> post cũ xuống cuối 
+	posts := make([]models.Post, 0, len(postIDs))
+	for _, id := range postIDs {
+		if post, found := cachedPosts[id]; found {
+			posts = append(posts, post)
+		}
 	}
 
-	if err == nil && posts != nil {
-		cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
-	}
+	log.Info().
+		Int("total_posts", len(posts)).
+		Int("cached_posts", len(cachedPosts)).
+		Int("db_fetched", len(missingPostIDs)).
+		Str("first_timestamp", firstTimestamp).
+		Dur("duration_ms", time.Since(start)).
+		Msg("Posts fetched with time-window caching")
 
-	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
+	if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
-
-	log.Info().
-		Int("post_count", len(posts)).
-		Int("page", page).
-		Bool("cache_hit", false).
-		Dur("duration_ms", time.Since(start)).
-		Msg("Posts fetched successfully from database")
 }
 
 func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -145,80 +169,84 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	id, err := strconv.Atoi(r.PathValue("id"))
+	categoryID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		log.Warn().Str("category_id", r.PathValue("id")).Msg("Invalid category ID")
 		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
 		return
 	}
 
-	if e := models.CheckCategories(db, []int{id}); e != nil {
-		log.Warn().Int("category_id", id).Msg("Category not found")
+	if e := models.CheckCategories(db, []int{categoryID}); e != nil {
+		log.Warn().Int("category_id", categoryID).Msg("Category not found")
 		utils.RenderError(db, w, r, 404, valid, username)
 		return
 	}
 
 	pid := r.FormValue("PageID")
 	page, _ := strconv.Atoi(pid)
-	page = (page - 1) * 10
-	if page < 0 {
-		page = 0
+	offset := (page - 1) * 10
+	if offset < 0 {
+		offset = 0
 	}
 
-	cacheKey := fmt.Sprintf("category_posts_%d_page_%d", id, int(page))
+	postIDs, firstTimestamp, err := models.FetchPostIDsForCategoryPage(db, categoryID, offset, 10)
+	if err != nil {
+		log.Error().Err(err).Int("category_id", categoryID).Int("offset", offset).Msg("Failed to fetch post IDs")
+		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		return
+	}
 
-	posts, found := getPostFromCache(cacheKey)
-	if found {
-		log.Info().
-			Str("cache_key", cacheKey).
-			Bool("cache_hit", true).
-			Int("post_count", len(posts)).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Category posts fetched from cache")
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
+	if len(postIDs) == 0 {
+		if offset > 0 {
+			log.Warn().Int("offset", offset).Int("category_id", categoryID).Msg("No posts found for category page")
+			utils.RenderError(db, w, r, 404, valid, username)
+			return
+		}
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []models.Post{}, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
 		return
 	}
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
-	// If cache miss
-	posts, statusCode, err := models.FetchPostsByCategory(db, id, page)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Int("category_id", id).
-			Int("status", statusCode).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Failed to fetch category posts")
-		utils.RenderError(db, w, r, statusCode, valid, username)
-		return
+	cachedPosts := getCachedPosts(postIDs)
+	//missing
+	missingIDs := []int{}
+	for _, id := range postIDs {
+		if _, found := cachedPosts[id]; !found {
+			missingIDs = append(missingIDs, id)
+		}
 	}
-
-	if posts == nil && page > 0 {
-		log.Warn().Int("page", page).Int("category_id", id).Msg("No posts found for category page")
-		utils.RenderError(db, w, r, 404, valid, username)
-		return
+	if len(missingIDs) > 0 {
+		dbPosts, err := models.FetchPostsByIDs(db, missingIDs)
+		if err != nil {
+			log.Error().Err(err).Ints("missing_ids", missingIDs).Msg("Failed to fetch missing posts")
+		} else {
+			for id, post := range dbPosts {
+				cachedPosts[id] = post
+				cachePost(post)
+			}
+		}
 	}
-
-	if err == nil && posts != nil {
-		cache.AppCache.Set(cacheKey, posts, config.CacheTTL)
+	posts := make([]models.Post, 0, len(postIDs))
+	for _, id := range postIDs {
+		if post, found := cachedPosts[id]; found {
+			posts = append(posts, post)
+		}
 	}
+	log.Info().
+		Int("total_posts", len(posts)).
+		Int("cached_posts", len(cachedPosts)).
+		Int("db_fetched", len(missingIDs)).
+		Int("category_id", categoryID).
+		Str("first_timestamp", firstTimestamp).
+		Dur("duration_ms", time.Since(start)).
+		Msg("Category posts fetched with time-window caching")
 
-	if err := utils.RenderTemplate(db, w, r, "home", statusCode, posts, valid, username); err != nil {
+	if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
-
-	log.Info().
-		Int("post_count", len(posts)).
-		Int("category_id", id).
-		Int("page", page).
-		Bool("cache_hit", false).
-		Dur("duration_ms", time.Since(start)).
-		Msg("Category posts fetched successfully")
 }
 
 func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -558,8 +586,7 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cache.AppCache.Delete("index_posts_page_0")
-	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
+	cache.AppCache.Delete(fmt.Sprintf("post_%d", post_id))
 
 	// Return the new count as JSON
 	w.Header().Set("Content-Type", "application/json")
@@ -573,8 +600,8 @@ func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	var user_id int
 	var valid bool
-	user_id, _, valid = models.ValidSession(r, db);
-	if  !valid {
+	user_id, _, valid = models.ValidSession(r, db)
+	if !valid {
 		w.WriteHeader(401)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
 		return
@@ -598,11 +625,7 @@ func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	cache.AppCache.Delete("index_posts_page_0")
-	cache.AppCache.Delete("post_" + strconv.Itoa(postID))
-	for i := 0; i < 10; i++ {
-		cache.AppCache.Delete(fmt.Sprintf("user_posts_%d_page_%d", user_id, i))
-	}
+	cache.AppCache.Delete(fmt.Sprintf("post_%d", postID))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)

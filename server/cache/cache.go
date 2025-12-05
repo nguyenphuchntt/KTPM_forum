@@ -68,3 +68,6 @@ func (cache *Cache) Delete(key string) {
 }
 
 var AppCache = New()
+
+// Global category cache instance
+var GlobalCategoryCache *CategoryCache

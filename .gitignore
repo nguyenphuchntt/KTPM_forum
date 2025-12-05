@@ -5,3 +5,4 @@ k6-tests/
 .idea/
 cmd/.env
 .env
+generate.py
