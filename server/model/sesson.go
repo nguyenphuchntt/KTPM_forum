@@ -1,17 +1,9 @@
 package model
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
-
-type SessionID uuid.UUID
+import "time"
 
 type Session struct {
-	ID SessionID
-
-	OwnerID AccountID
-
+	UserID    AccountID
+	SessionID string
 	ExpiresAt time.Time
 }

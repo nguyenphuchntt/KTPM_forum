@@ -1,22 +1,14 @@
 package model
 
-import (
-	"time"
-)
+import "time"
 
-type CommentID long
+type CommentID int64
 
 type Comment struct {
-	ID        CommentID
-	OwnerID    AccountID
-
-	ParentCommentID CommentID
-	PostID    PostID
-
-	Content   string
-
-	LikeCount     int
-	DislikeCount  int
-
-	CreatedAt time.Time
+	ID              CommentID
+	UserID          AccountID
+	PostID          PostID
+	ParentCommentID *CommentID
+	Content         string
+	CreatedAt       time.Time
 }

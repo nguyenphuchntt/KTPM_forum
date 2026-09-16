@@ -1,31 +1,23 @@
-package model 
+package model
 
-import (
-	"time"
-)
+import "time"
+
+type PostID int64
+type CategoryID int64
 
 type PostCategory struct {
-	ID int
-	label string
+	ID         int64
+	PostID     PostID
+	CategoryID CategoryID
+	Label      string
 }
 
-type long int64
-type PostID long
-
 type Post struct {
-
-	PostID        PostID
-	OwnerID       AccountID
-
-	Title         string
-	Content       string
-	Categories    []PostCategory
-
-	LikeCount         int
-	DislikeCount      int
-	CommentCount      int
-
-	CreatedAt     time.Time
-
-	MediaID     MediaID
+	ID         PostID
+	UserID     AccountID
+	Title      string
+	Content    string
+	MediaID    *MediaID
+	CreatedAt  time.Time
+	Categories []PostCategory
 }

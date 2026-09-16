@@ -2,16 +2,14 @@ package model
 
 import "time"
 
-type MediaID long
+type MediaID int64
 
 type Media struct {
 	ID        MediaID
-
 	ObjectKey string
 	PublicURL string
 	MIMEType  string
-	Size      long
-
+	Size      int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

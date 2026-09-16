@@ -1,18 +1,14 @@
 package model
 
-import (
-	"time"
-)
+import "time"
 
 type Profile struct {
-	firstName string 
-	lastName string 
-
-	location string
-
-	avatarMediaId MediaID
-	coverMediaId MediaID
-
-	createdAt time.Time
-	updatedAt time.Time
+	AccountID     AccountID
+	FirstName     string
+	LastName      string
+	Location      string
+	AvatarMediaID *MediaID
+	CoverMediaID  *MediaID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }

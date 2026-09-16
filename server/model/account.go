@@ -9,15 +9,11 @@ import (
 type AccountID uuid.UUID
 
 type Account struct {
-	ID AccountID
-
-	Username string 
-	Password string 
-
-	Email string
-
-	Role string 
-
+	ID        AccountID
+	Email     string
+	Username  string
+	Password  string
+	Role      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
