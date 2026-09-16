@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"forum/server/models"
+	models "forum/server/model"
 	"forum/server/utils"
 )
 

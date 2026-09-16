@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"forum/server/metrics"
+	"forum/server/metric"
 )
 
 // QueryWithMetrics wraps db.Query with metrics collection

@@ -1,15 +1,14 @@
-package controllers
+package comment
 
 import (
 	"database/sql"
 	"encoding/json"
 	"forum/server/cache"
+	models "forum/server/model"
 	"html"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"forum/server/models"
 )
 
 func CreateComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -80,49 +79,49 @@ func CreateComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	})
 }
 
-func ReactToComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// func ReactToComment(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+// 	if r.Method != http.MethodPost {
+// 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// 		return
+// 	}
 
-	var user_id int
-	var valid bool
+// 	var user_id int
+// 	var valid bool
 
-	if user_id, _, valid = models.ValidSession(r, db); !valid {
-		w.WriteHeader(401)
-		return
-	}
+// 	if user_id, _, valid = models.ValidSession(r, db); !valid {
+// 		w.WriteHeader(401)
+// 		return
+// 	}
 
-	if err := r.ParseForm(); err != nil {
-		w.WriteHeader(400)
-		return
-	}
+// 	if err := r.ParseForm(); err != nil {
+// 		w.WriteHeader(400)
+// 		return
+// 	}
 
-	userReaction := r.FormValue("reaction")
-	id := r.FormValue("comment_id")
-	comment_id, err := strconv.Atoi(id)
-	if err != nil {
-		w.WriteHeader(400)
-		return
-	}
+// 	userReaction := r.FormValue("reaction")
+// 	id := r.FormValue("comment_id")
+// 	comment_id, err := strconv.Atoi(id)
+// 	if err != nil {
+// 		w.WriteHeader(400)
+// 		return
+// 	}
 
-	var post_id int
-	err = db.QueryRow("SELECT post_id FROM comments WHERE id = ?", comment_id).Scan(&post_id)
-	if err != nil {
-		w.WriteHeader(500)
-		return
-	}
+// 	var post_id int
+// 	err = db.QueryRow("SELECT post_id FROM comments WHERE id = ?", comment_id).Scan(&post_id)
+// 	if err != nil {
+// 		w.WriteHeader(500)
+// 		return
+// 	}
 
-	likeCount, dislikeCount, err := models.ReactToComment(db, user_id, comment_id, userReaction)
-	if err != nil {
-		w.WriteHeader(500)
-		return
-	}
+// 	likeCount, dislikeCount, err := models.ReactToComment(db, user_id, comment_id, userReaction)
+// 	if err != nil {
+// 		w.WriteHeader(500)
+// 		return
+// 	}
 
-	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
+// 	cache.AppCache.Delete("post_" + strconv.Itoa(post_id))
 
-	// Return the new count as JSON
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int{"commentlikesCount": likeCount, "commentdislikesCount": dislikeCount})
-}
+// 	// Return the new count as JSON
+// 	w.Header().Set("Content-Type", "application/json")
+// 	json.NewEncoder(w).Encode(map[string]int{"commentlikesCount": likeCount, "commentdislikesCount": dislikeCount})
+// }

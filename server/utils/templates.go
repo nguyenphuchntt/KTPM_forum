@@ -8,7 +8,7 @@ import (
 	"text/template"
 
 	"forum/server/config"
-	"forum/server/models"
+	models "forum/server/model"
 )
 
 type GlobalData struct {

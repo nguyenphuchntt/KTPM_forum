@@ -4,14 +4,13 @@ import (
 	"time"
 )
 
-type PostCategory string
+type PostCategory struct {
+	ID int
+	label string
+}
+
 type long int64
 type PostID long
-
-const (
-	EDUCATION PostCategory = "education_post"
-	ENTERTAINMENT PostCategory = "entertainment_post"
-)
 
 type Post struct {
 

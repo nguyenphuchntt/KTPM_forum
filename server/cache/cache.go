@@ -4,7 +4,7 @@ import (
 	"forum/server/config"
 	"log"
 	"time"
-	"forum/server/metrics"
+	"forum/server/metric"
 
 
 	lru "github.com/hashicorp/golang-lru/v2"

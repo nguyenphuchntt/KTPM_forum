@@ -1,4 +1,4 @@
-package controllers
+package post
 
 import (
 	"database/sql"
@@ -13,7 +13,7 @@ import (
 	"forum/server/cache"
 	"forum/server/config"
 	"forum/server/logger"
-	"forum/server/models"
+	models "forum/server/model"
 	"forum/server/utils"
 )
 
@@ -103,22 +103,22 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.RenderError(db, w, r, 404, valid, username)
 			return
 		}
-				// Empty first page is OK when there were no posts
+		// Empty first page is OK when there were no posts
 		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []models.Post{}, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
 		return
 	}
-	
+
 	cachedPosts := getCachedPosts(postIDs)
 	missingPostIDs := []int{}
 	for _, id := range postIDs {
-		if _, found := cachedPosts[id]; !found { // không tồn tại key này 
+		if _, found := cachedPosts[id]; !found { // không tồn tại key này
 			missingPostIDs = append(missingPostIDs, id)
 		}
 	}
-	// fetch missing posts 
+	// fetch missing posts
 	if len(missingPostIDs) > 0 {
 		dbPosts, err := models.FetchPostsByIDs(db, missingPostIDs)
 		if err != nil {
@@ -131,7 +131,7 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 	}
 
-	// posts array in correct order -> post cũ xuống cuối 
+	// posts array in correct order -> post cũ xuống cuối
 	posts := make([]models.Post, 0, len(postIDs))
 	for _, id := range postIDs {
 		if post, found := cachedPosts[id]; found {

@@ -1,4 +1,4 @@
-package controllers
+package user
 
 import (
 	"database/sql"
@@ -7,7 +7,7 @@ import (
 
 	"forum/server/config"
 	"forum/server/logger"
-	"forum/server/models"
+	models "forum/server/model"
 	"forum/server/utils"
 
 	"golang.org/x/crypto/bcrypt"
@@ -37,7 +37,7 @@ func GetLoginPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
 	log := logger.WithRequest(r, 0)
-	
+
 	var valid bool
 
 	if _, _, valid = models.ValidSession(r, db); valid {
@@ -115,20 +115,20 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		Expires: time.Now().Add(10 * time.Hour),
 		Path:    "/",
 	})
-	
+
 	log.Info().
 		Str("username", username).
 		Int("user_id", user_id).
 		Dur("duration_ms", time.Since(start)).
 		Msg("User logged in successfully")
-		
+
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func Logout(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if userID, username, valid := models.ValidSession(r, db); valid {
 		log := logger.WithRequest(r, userID)
-		
+
 		// Use the new model function
 		err := models.DeleteUserSession(db, userID)
 		if err != nil {
@@ -136,7 +136,7 @@ func Logout(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			http.Error(w, "Error while logging out!", http.StatusInternalServerError)
 			return
 		}
-		
+
 		log.Info().Str("username", username).Msg("User logged out successfully")
 
 		w.Header().Set("Content-Type", "text/html")
@@ -145,4 +145,74 @@ func Logout(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+package controllers
+
+import (
+	"database/sql"
+	"log"
+	"net/http"
+	"strings"
+
+	models "forum/server/model"
+	"forum/server/utils"
+)
+
+func GetRegisterPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var valid bool
+	if _, _, valid = models.ValidSession(r, db); valid {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		utils.RenderError(db, w, r, http.StatusMethodNotAllowed, false, "")
+		return
+	}
+
+	err := utils.RenderTemplate(db, w, r, "register", http.StatusOK, nil, false, "")
+	if err != nil {
+		log.Println(err)
+		http.Redirect(w, r, "/500", http.StatusSeeOther)
+	}
+}
+
+func Signup(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	var valid bool
+	if _, _, valid = models.ValidSession(r, db); valid {
+		w.WriteHeader(302)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(400)
+		return
+	}
+
+	email := r.FormValue("email")
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	passwordConfirmation := r.FormValue("password-confirmation")
+
+	if len(strings.TrimSpace(username)) < 4 || len(strings.TrimSpace(password)) < 6 || email == "" || password != passwordConfirmation {
+		w.WriteHeader(400)
+		return
+	}
+
+	_, err := models.StoreUser(db, email, username, password)
+	if err != nil {
+		if err.Error() == "UNIQUE constraint failed: users.username" {
+			w.WriteHeader(304)
+			return
+		}
+
+		w.WriteHeader(500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(200)
 }
