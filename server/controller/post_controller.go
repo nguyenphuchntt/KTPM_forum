@@ -383,8 +383,9 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			return
 		}
 	}
+	_ = imagePath
 
-	pid, err := postRepo.StorePost(db, model.AccountID(userID), title, content, imagePath)
+	pid, err := postRepo.StorePost(db, model.AccountID(userID), title, content, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Error storing post")
 		w.WriteHeader(400)

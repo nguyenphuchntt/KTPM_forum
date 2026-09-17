@@ -22,12 +22,18 @@ func FetchCommentsByPostID(db *sql.DB, postID int64) ([]model.Comment, error) {
 		SELECT
 			c.id,
 			c.user_id,
+			a.username,
 			c.post_id,
 			c.parent_comment_id,
 			c.content,
+			COALESCE(SUM(l.reaction = 'like'), 0) AS likes,
+			COALESCE(SUM(l.reaction = 'dislike'), 0) AS dislikes,
 			c.created_at
 		FROM comments c
+		INNER JOIN accounts a ON a.id = c.user_id
+		LEFT JOIN likes l ON l.target_type = 'comment' AND l.target_id = c.id
 		WHERE c.post_id = ?
+		GROUP BY c.id, c.user_id, a.username, c.post_id, c.parent_comment_id, c.content, c.created_at
 		ORDER BY c.created_at DESC`
 
 	rows, err := database.QueryWithMetrics(db, "select_comments", query, postID)
@@ -45,9 +51,12 @@ func FetchCommentsByPostID(db *sql.DB, postID int64) ([]model.Comment, error) {
 		if err := rows.Scan(
 			&comment.ID,
 			&comment.UserID,
+			&comment.Username,
 			&comment.PostID,
 			&parentCommentID,
 			&comment.Content,
+			&comment.LikeCount,
+			&comment.DislikeCount,
 			&comment.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -145,6 +154,12 @@ func StoreComment(db *sql.DB, userID uuid.UUID, postID int64, content string) (i
 	commentID, err := result.LastInsertId()
 	if err != nil {
 		return 0, fmt.Errorf("error reading comment id: %v", err)
+	}
+
+	queryUpdatePost := `UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?`
+	_, err = database.ExecWithMetricsTx(tx, "update_post_comment_count", queryUpdatePost, postID)
+	if err != nil {
+		return 0, fmt.Errorf("error updating post comment count: %v", err)
 	}
 
 	if err = tx.Commit(); err != nil {

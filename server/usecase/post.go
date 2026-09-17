@@ -80,7 +80,7 @@ func (uc *PostUsecase) CreatePost(input CreatePostInput) (*CreatePostResult, err
 		return nil, ErrCategoryInvalid
 	}
 
-	postID, err := postRepository.StorePost(uc.db, model.AccountID(session.UserID), title, content, input.ImageURL)
+	postID, err := postRepository.StorePost(uc.db, model.AccountID(session.UserID), title, content, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +223,24 @@ func (uc *PostUsecase) FetchLikedPosts(userID model.AccountID, offset int) ([]mo
 		return nil, http.StatusUnauthorized, ErrPostUnauthorized
 	}
 	return postRepository.FetchLikedPostsByUser(uc.db, userID, normalizeOffset(offset))
+}
+
+func (uc *PostUsecase) ValidateSession(r *http.Request) SessionInfo {
+	if uc.auth == nil {
+		return SessionInfo{}
+	}
+	return uc.auth.ValidateSession(r)
+}
+
+func (uc *PostUsecase) ListPosts(offset int) ([]model.Post, int, error) {
+	return postRepository.FetchPosts(uc.db, normalizeOffset(offset))
+}
+
+func (uc *PostUsecase) ListPostsByCategory(categoryID, offset int) ([]model.Post, int, error) {
+	if err := categoryRepository.CheckCategories(uc.db, []int{categoryID}); err != nil {
+		return nil, http.StatusNotFound, ErrCategoryInvalid
+	}
+	return postRepository.FetchPostsByCategory(uc.db, categoryID, normalizeOffset(offset))
 }
 
 func normalizeOffset(offset int) int {

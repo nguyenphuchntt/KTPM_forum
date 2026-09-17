@@ -15,11 +15,14 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 
 	// Layered (JSON API v1) dependencies and routes.
 	authUc := usecase.NewAuthUsecase(db)
+	postUc := usecase.NewPostUsecase(db, authUc)
 	commentUc := usecase.NewCommentUsecase(db, authUc)
 	authC := controllers.NewAuthController(authUc)
+	postC := controllers.NewPostController(postUc)
 	commentC := controllers.NewCommentController(commentUc)
 	controllers.RegisterAuthRoutes(mux, authC)
 	controllers.RegisterCommentRoutes(mux, commentC)
+	controllers.RegisterPostRoutes(mux, postC)
 
 	// Initialize rate limit config
 	rateLimitConfig := config.DefaultRateLimitConfig()

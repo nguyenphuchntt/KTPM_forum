@@ -47,6 +47,26 @@ func main() {
 		logger.Log.Fatal().Err(err).Msg("Database connection error")
 	}
 
+	// Handle database setup based on environment before initializing caches
+	if isDocker {
+		// Create the database schema and demo data
+		err := config.CreateDemoData(db)
+		if err != nil {
+			logger.Log.Fatal().Err(err).Msg("Error creating the database schema and demo data")
+		}
+		logger.Log.Info().Msg("Database setup complete")
+	} else {
+		// Handle command-line flags for database setup
+		if len(os.Args) > 1 {
+			if err := utils.HandleFlags(os.Args[1:], db); err != nil {
+				fmt.Println(err)
+				utils.Usage()
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	cache.InitSessionCache(5 * time.Second)
 	logger.Log.Info().Msg("Session cache initialized with 5s TTL")
 
@@ -84,25 +104,6 @@ func main() {
 	if os.Getenv("ENABLE_QUARANTINE_WATCHER") == "true" && connectionString != "" {
 		workers.StartQuarantineWatcher(connectionString)
 	}
-	// Handle database setup based on environment
-	if isDocker {
-		// Create the database schema and demo data
-		err := config.CreateDemoData(db)
-		if err != nil {
-			logger.Log.Fatal().Err(err).Msg("Error creating the database schema and demo data")
-		}
-		logger.Log.Info().Msg("Database setup complete")
-	} else {
-		// Handle command-line flags for database setup
-		if len(os.Args) > 1 {
-			if err := utils.HandleFlags(os.Args[1:], db); err != nil {
-				fmt.Println(err)
-				utils.Usage()
-				os.Exit(1)
-			}
-			return
-		}
-	}
 
 	// Initialize rate limit config
 	rateLimitConfig := config.DefaultRateLimitConfig()
@@ -129,7 +130,8 @@ func main() {
 
 	go func() {
 		metricsServer := http.NewServeMux()
-		metricsServer.Handle("metric", promhttp.Handler())
+		metricsServer.Handle("/metrics", promhttp.Handler())
+		metricsServer.Handle("/metric", promhttp.Handler())
 
 		logger.Log.Info().Msg("Metrics server starting on :9090")
 		if err := http.ListenAndServe(":9090", metricsServer); err != nil {
