@@ -12,7 +12,7 @@ import (
 	"forum/server/config"
 	metrics "forum/server/metric"
 	"forum/server/middleware/ratelimit"
-	"forum/server/models"
+	userRepo "forum/server/repository/mysql/user"
 )
 
 // RateLimitMiddleware manages rate limiting for the application
@@ -98,11 +98,11 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 
 // getUserID extracts user ID from session
 func (m *RateLimitMiddleware) getUserID(r *http.Request) string {
-	userID, _, valid := models.ValidSession(r, m.db)
+	userID, _, valid := userRepo.ValidSession(r, m.db)
 	if !valid {
 		return ""
 	}
-	return fmt.Sprintf("%d", userID)
+	return userID.String()
 }
 
 // getClientIP extracts the real client IP address
@@ -265,15 +265,15 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 // LimitCreatePost rate limits post creation
 func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if !valid {
 			next(w, r)
 			return
 		}
 
-		key := fmt.Sprintf("post:%d", userID)
+		key := fmt.Sprintf("post:%s", userID)
 		if !e.postLimiter.Allow(key) {
-			log.Printf("[RATE_LIMIT] Type=post | UserID=%d | Limit=%d/hour",
+			log.Printf("[RATE_LIMIT] Type=post | UserID=%s | Limit=%d/hour",
 				userID, e.config.PostsPerHour)
 
 			metrics.RateLimitDropsTotal.WithLabelValues("/post/createpost", "post").Inc()
@@ -295,15 +295,15 @@ func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB)
 // LimitCreateComment rate limits comment creation
 func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if !valid {
 			next(w, r)
 			return
 		}
 
-		key := fmt.Sprintf("comment:%d", userID)
+		key := fmt.Sprintf("comment:%s", userID)
 		if !e.commentLimiter.Allow(key) {
-			log.Printf("[RATE_LIMIT] Type=comment | UserID=%d | Limit=%d/hour",
+			log.Printf("[RATE_LIMIT] Type=comment | UserID=%s | Limit=%d/hour",
 				userID, e.config.CommentsPerHour)
 
 			metrics.RateLimitDropsTotal.WithLabelValues("/post/addcommentREQ", "comment").Inc()
@@ -330,9 +330,9 @@ func (e *EndpointRateLimiter) LimitUpload(next http.Handler, db *sql.DB) http.Ha
 		// Or better: use UserID if available, else IP.
 
 		var key string
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if valid {
-			key = fmt.Sprintf("upload:user:%d", userID)
+			key = fmt.Sprintf("upload:user:%s", userID)
 		} else {
 			ip := getClientIP(r)
 			key = "upload:ip:" + ip

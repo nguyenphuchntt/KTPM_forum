@@ -34,12 +34,12 @@ func Init() {
 }
 
 // WithRequest creates a logger with request context
-func WithRequest(r *http.Request, userID int) zerolog.Logger {
+func WithRequest(r *http.Request, userID any) zerolog.Logger {
 	return Log.With().
 		Str("method", r.Method).
 		Str("path", r.URL.Path).
 		Str("ip", GetClientIP(r)).
-		Int("user_id", userID).
+		Interface("user_id", userID).
 		Logger()
 }
 

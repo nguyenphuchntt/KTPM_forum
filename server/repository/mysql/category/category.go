@@ -1,4 +1,4 @@
-package models
+package category
 
 import (
 	"database/sql"
@@ -7,43 +7,32 @@ import (
 
 	"forum/server/cache"
 	"forum/server/database"
+	"forum/server/model"
 )
 
-type Category struct {
-	ID         int
-	Label      string
-	PostsCount int
-}
-
-func FetchCategories(db *sql.DB) ([]Category, error) {
+func FetchCategories(db *sql.DB) ([]model.Category, error) {
 	// Use cache if available
 	if cache.GlobalCategoryCache != nil {
 		cachedCategories := cache.GlobalCategoryCache.GetAll()
 		if len(cachedCategories) > 0 {
-			// Convert cache.CategoryInfo to models.Category
-			categories := make([]Category, len(cachedCategories))
+			categories := make([]model.Category, len(cachedCategories))
 			for i, cat := range cachedCategories {
-				categories[i] = Category{
-					ID:         cat.ID,
-					Label:      cat.Label,
-					PostsCount: cat.PostsCount,
+				categories[i] = model.Category{
+					ID:    model.CategoryID(cat.ID),
+					Label: cat.Label,
 				}
 			}
 			return categories, nil
 		}
 	}
 
-	// Fallback to database query if cache not available
-	var categories []Category
+	var categories []model.Category
 	query := `
 		SELECT
 			c.id,
-			c.label,
-			COUNT(pc.post_id) as posts_count
+			c.label
 		FROM categories c
-		LEFT JOIN post_category pc ON pc.category_id = c.id
-		GROUP BY c.id, c.label
-		ORDER BY posts_count DESC;
+		ORDER BY c.label ASC;
 	`
 	rows, err := database.QueryWithMetrics(db, "select_categories", query)
 	if err != nil {
@@ -51,8 +40,14 @@ func FetchCategories(db *sql.DB) ([]Category, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var category Category
-		rows.Scan(&category.ID, &category.Label, &category.PostsCount)
+		var (
+			category model.Category
+			id       int64
+		)
+		if err := rows.Scan(&id, &category.Label); err != nil {
+			return nil, err
+		}
+		category.ID = model.CategoryID(id)
 		categories = append(categories, category)
 	}
 	return categories, nil

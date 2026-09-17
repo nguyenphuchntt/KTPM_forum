@@ -12,7 +12,7 @@ import (
 	"forum/server/cache"
 	"forum/server/cloud"
 	"forum/server/config"
-	"forum/server/controllers"
+	"forum/server/controller"
 	"forum/server/logger"
 	metrics "forum/server/metric"
 	"forum/server/middleware"

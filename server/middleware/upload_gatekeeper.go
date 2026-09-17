@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"forum/server/cloud"
-	"forum/server/models"
+	userRepo "forum/server/repository/mysql/user"
 )
 
 // UploadGatekeeper - Gatekeeper Pattern implementation
@@ -53,13 +53,13 @@ func (g *UploadGatekeeper) GenerateUploadURL(w http.ResponseWriter, r *http.Requ
 	g.logger.Println("Received upload request")
 
 	// Step 1: Authentication check
-	userID, username, valid := models.ValidSession(r, g.db)
+	userID, username, valid := userRepo.ValidSession(r, g.db)
 	if !valid {
 		g.logger.Println("✗ Unauthorized: No valid session")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	g.logger.Printf("✓ User authenticated: %s (ID: %d)", username, userID)
+	g.logger.Printf("✓ User authenticated: %s (ID: %s)", username, userID)
 
 	// Step 2: Rate limiting (TODO: implement nếu cần)
 	// For now, skip rate limiting
@@ -85,8 +85,8 @@ func (g *UploadGatekeeper) GenerateUploadURL(w http.ResponseWriter, r *http.Requ
 	// Step 5: Generate unique blob name
 	ext := filepath.Ext(req.Filename)
 	timestamp := time.Now().UnixNano()
-	quarantineBlob := fmt.Sprintf("quarantine/%d_%d%s", userID, timestamp, ext)
-	productionBlob := fmt.Sprintf("%d_%d%s", userID, timestamp, ext)
+	quarantineBlob := fmt.Sprintf("quarantine/%s_%d%s", userID, timestamp, ext)
+	productionBlob := fmt.Sprintf("%s_%d%s", userID, timestamp, ext)
 
 	g.logger.Printf("Generated blob names: quarantine=%s, production=%s", quarantineBlob, productionBlob)
 

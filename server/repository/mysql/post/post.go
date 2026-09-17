@@ -4,16 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"forum/server/utils/retry"
 	"log"
 	"strings"
 	"time"
 
 	"forum/server/database"
+	"forum/server/model"
+	commentRepo "forum/server/repository/mysql/comment"
+	"forum/server/utils/retry"
+
+	"github.com/google/uuid"
 )
 
-func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
-	var posts []Post
+type PostDetail struct {
+	Post     model.Post
+	Comments []model.Comment
+}
+
+func FetchPosts(db *sql.DB, currentPage int) ([]model.Post, int, error) {
+	var posts []model.Post
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -21,15 +30,9 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 	query := `SELECT
 		post_id,
 		user_id,
-		username,
 		title,
 		content,
-		image_path,
-		DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-		like_count,
-		dislike_count,
-		comment_count,
-		categories_str
+		created_at
 	FROM
 		post_materialized_view
 	ORDER BY
@@ -47,33 +50,23 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var post Post
-		var imagePath sql.NullString
-		var categoriesStr sql.NullString
+		var post model.Post
+		var postID int64
+		var userID uuid.UUID
 
-		err := rows.Scan(&post.ID,
-			&post.UserID,
-			&post.UserName,
+		err := rows.Scan(
+			&postID,
+			&userID,
 			&post.Title,
 			&post.Content,
-			&imagePath,
 			&post.CreatedAt,
-			&post.Likes,
-			&post.Dislikes,
-			&post.Comments,
-			&categoriesStr)
+		)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
-		post.ImagePath = imagePath.String
-		post.CategoriesStr = categoriesStr.String
-
-		if post.CategoriesStr != "" {
-			post.Categories = strings.Split(post.CategoriesStr, ",")
-		} else {
-			post.Categories = []string{}
-		}
+		post.ID = model.PostID(postID)
+		post.UserID = model.AccountID(userID)
 
 		posts = append(posts, post)
 	}
@@ -87,9 +80,9 @@ func FetchPosts(db *sql.DB, currentPage int) ([]Post, int, error) {
 }
 
 // Returns posts given their IDs
-func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[int]Post, error) {
+func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[model.PostID]model.Post, error) {
 	if len(postIDs) == 0 {
-		return make(map[int]Post), nil
+		return make(map[model.PostID]model.Post), nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -105,15 +98,9 @@ func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[int]Post, error) {
 	query := fmt.Sprintf(`SELECT
 		post_id,
 		user_id,
-		username,
 		title,
 		content,
-		image_path,
-		DATE_FORMAT(created_at, '%%m/%%d/%%Y %%I:%%M %%p') AS formatted_created_at,
-		like_count,
-		dislike_count,
-		comment_count,
-		categories_str
+		created_at
 	FROM
 		post_materialized_view
 	WHERE post_id IN (%s)
@@ -129,27 +116,19 @@ func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[int]Post, error) {
 	}
 	defer rows.Close()
 
-	result := make(map[int]Post)
+	result := make(map[model.PostID]model.Post)
 	for rows.Next() {
-		var post Post
-		var imagePath sql.NullString
-		var categoriesStr sql.NullString
+		var post model.Post
+		var postID int64
+		var userID uuid.UUID
 
-		err := rows.Scan(&post.ID, &post.UserID, &post.UserName, &post.Title,
-			&post.Content, &imagePath, &post.CreatedAt, &post.Likes,
-			&post.Dislikes, &post.Comments, &categoriesStr)
+		err := rows.Scan(&postID, &userID, &post.Title, &post.Content, &post.CreatedAt)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, err
 		}
-
-		post.ImagePath = imagePath.String
-		post.CategoriesStr = categoriesStr.String
-		if post.CategoriesStr != "" {
-			post.Categories = strings.Split(post.CategoriesStr, ",")
-		} else {
-			post.Categories = []string{}
-		}
+		post.ID = model.PostID(postID)
+		post.UserID = model.AccountID(userID)
 
 		result[post.ID] = post
 	}
@@ -207,8 +186,8 @@ func FetchPostIDsByTimestamp(db *sql.DB, offset, limit int) ([]int, string, erro
 	return postIDs, firstTimestamp, nil
 }
 
-func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
-	var post Post
+func FetchPost(db *sql.DB, postID model.PostID) (PostDetail, int, error) {
+	var post model.Post
 	post.ID = postID
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -216,37 +195,24 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 
 	query := `SELECT
 		user_id,
-		username,
 		title,
 		content,
-		image_path,
-		DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-		like_count,
-		dislike_count,
-		comment_count,
-		categories_str
+		created_at
 	FROM
 		post_materialized_view
 	WHERE post_id = ?`
 
-	var imagePath sql.NullString
-	var categoriesStr sql.NullString
 	retryConfig := retry.DatabaseQueryRetryConfig()
+	var userID uuid.UUID
 	_, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Row, error) {
 
-		row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail_materialized", query, postID)
+		row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail_materialized", query, int64(postID))
 
 		err := row.Scan(
-			&post.UserID,
-			&post.UserName,
+			&userID,
 			&post.Title,
 			&post.Content,
-			&imagePath,
-			&post.CreatedAt,
-			&post.Likes,
-			&post.Dislikes,
-			&post.Comments,
-			&categoriesStr)
+			&post.CreatedAt)
 		recordError(err)
 		return row, err
 	})
@@ -257,16 +223,9 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 		log.Println("Error scanning row:", err)
 		return PostDetail{}, 500, err
 	}
-	post.ImagePath = imagePath.String
-	post.CategoriesStr = categoriesStr.String
+	post.UserID = model.AccountID(userID)
 
-	if post.CategoriesStr != "" {
-		post.Categories = strings.Split(post.CategoriesStr, ",")
-	} else {
-		post.Categories = []string{}
-	}
-
-	comments, err := FetchCommentsByPostID(postID, db)
+	comments, err := commentRepo.FetchCommentsByPostID(db, int64(postID))
 	if err != nil {
 		log.Println("Error fetching comments from the database:", err)
 	}
@@ -277,8 +236,8 @@ func FetchPost(db *sql.DB, postID int) (PostDetail, int, error) {
 	}, 200, nil
 }
 
-func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, int, error) {
-	var posts []Post
+func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]model.Post, int, error) {
+	var posts []model.Post
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -287,15 +246,9 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 		SELECT
 			pmv.post_id,
 			pmv.user_id,
-			pmv.username,
 			pmv.title,
 			pmv.content,
-			pmv.image_path,
-			DATE_FORMAT(pmv.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-			pmv.like_count,
-			pmv.dislike_count,
-			pmv.comment_count,
-			pmv.categories_str
+			pmv.created_at
 		FROM
 			post_materialized_view pmv
 			INNER JOIN post_category pc ON pmv.post_id = pc.post_id
@@ -313,32 +266,20 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]Post, 
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var post Post
-		var imagePath sql.NullString
-		var categoriesStr sql.NullString
-		err := rows.Scan(&post.ID,
-			&post.UserID,
-			&post.UserName,
+		var post model.Post
+		var postID int64
+		var userID uuid.UUID
+		err := rows.Scan(&postID,
+			&userID,
 			&post.Title,
 			&post.Content,
-			&imagePath,
-			&post.CreatedAt,
-			&post.Likes,
-			&post.Dislikes,
-			&post.Comments,
-			&categoriesStr)
+			&post.CreatedAt)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
-		post.ImagePath = imagePath.String
-		post.CategoriesStr = categoriesStr.String
-
-		if post.CategoriesStr != "" {
-			post.Categories = strings.Split(post.CategoriesStr, ",")
-		} else {
-			post.Categories = []string{}
-		}
+		post.ID = model.PostID(postID)
+		post.UserID = model.AccountID(userID)
 
 		posts = append(posts, post)
 	}
@@ -398,8 +339,8 @@ func FetchPostIDsForCategoryPage(db *sql.DB, categoryID, offset, limit int) ([]i
 	return postIDs, firstTimestamp, nil
 }
 
-func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, int, error) {
-	var posts []Post
+func FetchCreatedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage int) ([]model.Post, int, error) {
+	var posts []model.Post
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -407,15 +348,9 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 	query := `SELECT
 		post_id,
 		user_id,
-		username,
 		title,
 		content,
-		image_path,
-		DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-		like_count,
-		dislike_count,
-		comment_count,
-		categories_str
+		created_at
 	FROM
 		post_materialized_view
 	WHERE user_id = ?
@@ -423,7 +358,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 		created_at DESC
 	LIMIT 10 OFFSET ?`
 	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_posts_by_user_materialized", query, user_id, currentPage)
+		return database.QueryWithMetrics(db, "select_posts_by_user_materialized", query, uuid.UUID(user_id), currentPage)
 	})
 	if err != nil {
 		log.Println("Error executing query:", err)
@@ -432,31 +367,20 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 	defer rows.Close()
 
 	for rows.Next() {
-		var post Post
-		var imagePath sql.NullString
-		var categoriesStr sql.NullString
-		err := rows.Scan(&post.ID,
-			&post.UserID,
-			&post.UserName,
+		var post model.Post
+		var postID int64
+		var userID uuid.UUID
+		err := rows.Scan(&postID,
+			&userID,
 			&post.Title,
 			&post.Content,
-			&imagePath,
-			&post.CreatedAt,
-			&post.Likes,
-			&post.Dislikes,
-			&post.Comments,
-			&categoriesStr)
+			&post.CreatedAt)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
-		post.ImagePath = imagePath.String
-		post.CategoriesStr = categoriesStr.String
-		if post.CategoriesStr != "" {
-			post.Categories = strings.Split(post.CategoriesStr, ",")
-		} else {
-			post.Categories = []string{}
-		}
+		post.ID = model.PostID(postID)
+		post.UserID = model.AccountID(userID)
 
 		posts = append(posts, post)
 	}
@@ -469,21 +393,15 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, 
 	return posts, 200, nil
 }
 
-func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, int, error) {
-	var posts []Post
+func FetchLikedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage int) ([]model.Post, int, error) {
+	var posts []model.Post
 
 	query := `SELECT
 		pmv.post_id,
 		pmv.user_id,
-		pmv.username,
 		pmv.title,
 		pmv.content,
-		pmv.image_path,
-		DATE_FORMAT(pmv.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at,
-		pmv.like_count,
-		pmv.dislike_count,
-		pmv.comment_count,
-		pmv.categories_str
+		pmv.created_at
 	FROM
 		post_materialized_view pmv
 		INNER JOIN post_reactions pr ON pmv.post_id = pr.post_id
@@ -495,7 +413,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 	defer cancel()
 	retryConfig := retry.DatabaseQueryRetryConfig()
 	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_liked_posts_materialized", query, user_id, currentPage)
+		return database.QueryWithMetrics(db, "select_liked_posts_materialized", query, uuid.UUID(user_id), currentPage)
 	})
 	if err != nil {
 		log.Println("Error executing query:", err)
@@ -504,31 +422,20 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 	defer rows.Close()
 
 	for rows.Next() {
-		var post Post
-		var imagePath sql.NullString
-		var categoriesStr sql.NullString
-		err := rows.Scan(&post.ID,
-			&post.UserID,
-			&post.UserName,
+		var post model.Post
+		var postID int64
+		var userID uuid.UUID
+		err := rows.Scan(&postID,
+			&userID,
 			&post.Title,
 			&post.Content,
-			&imagePath,
-			&post.CreatedAt,
-			&post.Likes,
-			&post.Dislikes,
-			&post.Comments,
-			&categoriesStr)
+			&post.CreatedAt)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, 500, err
 		}
-		post.ImagePath = imagePath.String
-		post.CategoriesStr = categoriesStr.String
-		if post.CategoriesStr != "" {
-			post.Categories = strings.Split(post.CategoriesStr, ",")
-		} else {
-			post.Categories = []string{}
-		}
+		post.ID = model.PostID(postID)
+		post.UserID = model.AccountID(userID)
 
 		posts = append(posts, post)
 	}
@@ -541,7 +448,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id int, currentPage int) ([]Post, in
 	return posts, 200, nil
 }
 
-func StorePost(db *sql.DB, user_id int, title, content, imagePath string) (int64, error) {
+func StorePost(db *sql.DB, user_id model.AccountID, title, content, imagePath string) (int64, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
@@ -549,7 +456,7 @@ func StorePost(db *sql.DB, user_id int, title, content, imagePath string) (int64
 	defer tx.Rollback()
 
 	query := `INSERT INTO posts (user_id, title, content, image_path) VALUES (?,?,?,?)`
-	result, err := database.ExecWithMetricsTx(tx, "insert_post", query, user_id, title, content, imagePath)
+	result, err := database.ExecWithMetricsTx(tx, "insert_post", query, uuid.UUID(user_id), title, content, imagePath)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -559,7 +466,7 @@ func StorePost(db *sql.DB, user_id int, title, content, imagePath string) (int64
 	}
 
 	var username string
-	err = tx.QueryRow("SELECT username FROM users WHERE id = ?", user_id).Scan(&username)
+	err = tx.QueryRow("SELECT username FROM accounts WHERE id = ?", uuid.UUID(user_id)).Scan(&username)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -569,7 +476,7 @@ func StorePost(db *sql.DB, user_id int, title, content, imagePath string) (int64
     	post_materialized_view(post_id, user_id, username, title, content, image_path, created_at, like_count, dislike_count, comment_count, categories_str)
 		VALUES (?, ?, ?, ?, ?, ?, (SELECT created_at FROM posts p WHERE p.id = ?), 0, 0, 0, '');`
 
-	_, err = database.ExecWithMetricsTx(tx, "insert_post_materialized_view", query_materialized, postID, user_id, username, title, content, imagePath, postID)
+	_, err = database.ExecWithMetricsTx(tx, "insert_post_materialized_view", query_materialized, postID, uuid.UUID(user_id), username, title, content, imagePath, postID)
 	if err != nil {
 		return 0, fmt.Errorf("%v", err)
 	}
@@ -681,7 +588,7 @@ func StoreAllPostCategories(db *sql.DB, post_id int64, category_ids []int) (int6
 	return int64(len(category_ids)), nil
 }
 
-func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, int, error) {
+func ReactToPost(db *sql.DB, user_id model.AccountID, post_id model.PostID, userReaction string) (int, int, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, 0, fmt.Errorf("error starting transaction: %v", err)
@@ -692,7 +599,7 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	var dbreaction string
 
 	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "select_post_reaction",
-		"SELECT reaction FROM post_reactions WHERE user_id=? AND post_id=?", user_id, post_id)
+		"SELECT reaction FROM post_reactions WHERE user_id=? AND post_id=?", uuid.UUID(user_id), int64(post_id))
 	err = row.Scan(&dbreaction)
 	if err != sql.ErrNoRows {
 		recordError(err)
@@ -703,20 +610,20 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 
 	if dbreaction == "" {
 		query := `INSERT INTO post_reactions (user_id, post_id, reaction) VALUES (?,?,?)`
-		_, err = database.ExecWithMetricsTx(tx, "insert_post_reaction", query, user_id, post_id, userReaction)
+		_, err = database.ExecWithMetricsTx(tx, "insert_post_reaction", query, uuid.UUID(user_id), int64(post_id), userReaction)
 		if err != nil {
 			return 0, 0, fmt.Errorf("error inserting reaction: %v", err)
 		}
 	} else {
 		if userReaction == dbreaction {
 			query := "DELETE FROM post_reactions WHERE user_id = ? AND post_id = ?"
-			_, err = database.ExecWithMetricsTx(tx, "delete_post_reaction", query, user_id, post_id)
+			_, err = database.ExecWithMetricsTx(tx, "delete_post_reaction", query, uuid.UUID(user_id), int64(post_id))
 			if err != nil {
 				return 0, 0, fmt.Errorf("error deleting reaction: %v", err)
 			}
 		} else {
 			query := "UPDATE post_reactions SET reaction = ? WHERE user_id = ? AND post_id = ?"
-			_, err = database.ExecWithMetricsTx(tx, "update_post_reaction", query, userReaction, user_id, post_id)
+			_, err = database.ExecWithMetricsTx(tx, "update_post_reaction", query, userReaction, uuid.UUID(user_id), int64(post_id))
 			if err != nil {
 				return 0, 0, fmt.Errorf("error updating reaction: %v", err)
 			}
@@ -724,7 +631,7 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	}
 
 	row1, recordError1 := database.QueryRowWithMetricsAndErrorTx(tx, "count_post_likes",
-		"SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "like")
+		"SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", int64(post_id), "like")
 	err = row1.Scan(&likeCount)
 	recordError1(err)
 	if err != nil {
@@ -732,7 +639,7 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	}
 
 	row2, recordError2 := database.QueryRowWithMetricsAndErrorTx(tx, "count_post_dislikes",
-		"SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", post_id, "dislike")
+		"SELECT COUNT(*) FROM post_reactions WHERE post_id=? AND reaction=?", int64(post_id), "dislike")
 	err = row2.Scan(&dislikeCount)
 	recordError2(err)
 	if err != nil {
@@ -740,7 +647,7 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	}
 
 	query_update_materialized := `UPDATE post_materialized_view SET like_count = ?, dislike_count = ? WHERE post_id = ?`
-	_, err = database.ExecWithMetricsTx(tx, "update_materialized_reactions", query_update_materialized, likeCount, dislikeCount, post_id)
+	_, err = database.ExecWithMetricsTx(tx, "update_materialized_reactions", query_update_materialized, likeCount, dislikeCount, int64(post_id))
 	if err != nil {
 		return 0, 0, fmt.Errorf("error updating materialized view: %v", err)
 	}
@@ -752,7 +659,7 @@ func ReactToPost(db *sql.DB, user_id, post_id int, userReaction string) (int, in
 	return likeCount, dislikeCount, nil
 }
 
-func DeletePost(db *sql.DB, user_id, post_id int) (int, error) {
+func DeletePost(db *sql.DB, user_id model.AccountID, post_id model.PostID) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -762,9 +669,9 @@ func DeletePost(db *sql.DB, user_id, post_id int) (int, error) {
 	}
 	defer tx.Rollback()
 
-	var postOwnerID int
+	var postOwnerID model.AccountID
 	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "select_post_owner",
-		"SELECT user_id FROM posts WHERE id = ?", post_id)
+		"SELECT user_id FROM posts WHERE id = ?", int64(post_id))
 	err = row.Scan(&postOwnerID)
 	if err != nil {
 		recordError(err)
@@ -781,14 +688,14 @@ func DeletePost(db *sql.DB, user_id, post_id int) (int, error) {
 
 	retryConfig := retry.DatabaseQueryRetryConfig()
 	_, err = retry.TryWithResult(ctx, retryConfig, func() (sql.Result, error) {
-		return database.ExecWithMetricsTx(tx, "delete_post", "DELETE FROM posts WHERE id = ?", post_id)
+		return database.ExecWithMetricsTx(tx, "delete_post", "DELETE FROM posts WHERE id = ?", int64(post_id))
 	})
 	if err != nil {
 		return 500, fmt.Errorf("error deleting post: %v", err)
 	}
 
 	_, err = retry.TryWithResult(ctx, retryConfig, func() (sql.Result, error) {
-		return database.ExecWithMetricsTx(tx, "delete_post_materialized", "DELETE FROM post_materialized_view WHERE post_id = ?", post_id)
+		return database.ExecWithMetricsTx(tx, "delete_post_materialized", "DELETE FROM post_materialized_view WHERE post_id = ?", int64(post_id))
 	})
 	if err != nil {
 		return 500, fmt.Errorf("error deleting from materialized view: %v", err)

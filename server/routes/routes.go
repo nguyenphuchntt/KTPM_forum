@@ -5,12 +5,21 @@ import (
 	"net/http"
 
 	"forum/server/config"
-	"forum/server/controllers"
+	"forum/server/controller"
 	"forum/server/middleware"
+	"forum/server/usecase"
 )
 
 func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookController *controllers.WebhookController) http.Handler {
 	mux := http.NewServeMux()
+
+	// Layered (JSON API v1) dependencies and routes.
+	authUc := usecase.NewAuthUsecase(db)
+	commentUc := usecase.NewCommentUsecase(db, authUc)
+	authC := controllers.NewAuthController(authUc)
+	commentC := controllers.NewCommentController(commentUc)
+	controllers.RegisterAuthRoutes(mux, authC)
+	controllers.RegisterCommentRoutes(mux, commentC)
 
 	// Initialize rate limit config
 	rateLimitConfig := config.DefaultRateLimitConfig()
@@ -42,13 +51,7 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		controllers.ShowPost(w, r, db)
 	})
 
-	// Rate limited comment creation
-	mux.HandleFunc("/post/addcommentREQ",
-		endpointLimiter.LimitCreateComment(func(w http.ResponseWriter, r *http.Request) {
-			controllers.CreateComment(w, r, db)
-		}, db),
-	)
-
+	// Post creation form page
 	mux.HandleFunc("/post/create", func(w http.ResponseWriter, r *http.Request) {
 		controllers.GetPostCreationForm(w, r, db)
 	})
@@ -63,10 +66,6 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 	// Rate limited reactions
 	mux.HandleFunc("/post/postreaction", func(w http.ResponseWriter, r *http.Request) {
 		controllers.ReactToPost(w, r, db)
-	})
-
-	mux.HandleFunc("/post/commentreaction", func(w http.ResponseWriter, r *http.Request) {
-		controllers.ReactToComment(w, r, db)
 	})
 
 	// Delete post route

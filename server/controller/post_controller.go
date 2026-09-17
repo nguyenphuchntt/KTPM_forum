@@ -3,71 +3,70 @@ package controllers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"html"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"fmt"
 	"forum/server/cache"
 	"forum/server/config"
 	"forum/server/logger"
-	models "forum/server/model"
+	"forum/server/model"
+	categoryRepo "forum/server/repository/mysql/category"
+	postRepo "forum/server/repository/mysql/post"
+	userRepo "forum/server/repository/mysql/user"
 	"forum/server/utils"
 )
 
 // cache post by its ID
-func cachePost(post models.Post) {
-	key := "post_" + strconv.Itoa(post.ID)
+func cachePost(post model.Post) {
+	key := fmt.Sprintf("post_%d", post.ID)
 	cache.AppCache.Set(key, post, config.CacheTTL)
 }
 
-func getCachedPostByID(postID int) (models.Post, bool) {
+func getCachedPostByID(postID int) (model.Post, bool) {
 	key := fmt.Sprintf("post_%d", postID)
 	data, found := cache.AppCache.Get(key)
 	if !found {
-		return models.Post{}, false
+		return model.Post{}, false
 	}
-	post, ok := data.(models.Post)
+	post, ok := data.(model.Post)
 	if !ok {
 		cache.AppCache.Delete(key)
-		return models.Post{}, false
+		return model.Post{}, false
 	}
 	return post, true
 }
 
-func getCachedPosts(postIDs []int) map[int]models.Post {
-	result := make(map[int]models.Post)
+func getCachedPosts(postIDs []int) map[model.PostID]model.Post {
+	result := make(map[model.PostID]model.Post)
 	for _, id := range postIDs {
 		if post, found := getCachedPostByID(id); found {
-			result[id] = post
+			result[model.PostID(id)] = post
 		}
 	}
 	return result
 }
 
-func getPostDetailFromCache(cacheKey string) (models.PostDetail, bool) {
+func getPostDetailFromCache(cacheKey string) (postRepo.PostDetail, bool) {
 	cachedData, found := cache.AppCache.Get(cacheKey)
 	if !found {
-		return models.PostDetail{}, false
+		return postRepo.PostDetail{}, false
 	}
 
-	postDetail, ok := cachedData.(models.PostDetail)
+	postDetail, ok := cachedData.(postRepo.PostDetail)
 	if !ok {
 		cache.AppCache.Delete(cacheKey)
-		return models.PostDetail{}, false
+		return postRepo.PostDetail{}, false
 	}
 
 	return postDetail, true
 }
 
 func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	start := time.Now()
-
-	var valid bool
-	var username string
-	userID, username, valid := models.ValidSession(r, db)
+	userID, username, valid := userRepo.ValidSession(r, db)
 
 	log := logger.WithRequest(r, userID)
 	log.Info().Msg("Fetching posts")
@@ -89,8 +88,7 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		offset = 0
 	}
 
-	// query postIDs for this page
-	postIDs, firstTimestamp, err := models.FetchPostIDsByTimestamp(db, offset, 10)
+	postIDs, _, err := postRepo.FetchPostIDsByTimestamp(db, offset, 10)
 	if err != nil {
 		log.Error().Err(err).Int("offset", offset).Msg("Failed to fetch post IDs")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
@@ -103,8 +101,7 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.RenderError(db, w, r, 404, valid, username)
 			return
 		}
-		// Empty first page is OK when there were no posts
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []models.Post{}, valid, username); err != nil {
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []model.Post{}, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
@@ -114,13 +111,12 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	cachedPosts := getCachedPosts(postIDs)
 	missingPostIDs := []int{}
 	for _, id := range postIDs {
-		if _, found := cachedPosts[id]; !found { // không tồn tại key này
+		if _, found := cachedPosts[model.PostID(id)]; !found {
 			missingPostIDs = append(missingPostIDs, id)
 		}
 	}
-	// fetch missing posts
 	if len(missingPostIDs) > 0 {
-		dbPosts, err := models.FetchPostsByIDs(db, missingPostIDs)
+		dbPosts, err := postRepo.FetchPostsByIDs(db, missingPostIDs)
 		if err != nil {
 			log.Error().Err(err).Ints("missing_ids", missingPostIDs).Msg("Failed to fetch missing posts")
 		} else {
@@ -131,21 +127,12 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 	}
 
-	// posts array in correct order -> post cũ xuống cuối
-	posts := make([]models.Post, 0, len(postIDs))
+	posts := make([]model.Post, 0, len(postIDs))
 	for _, id := range postIDs {
-		if post, found := cachedPosts[id]; found {
+		if post, found := cachedPosts[model.PostID(id)]; found {
 			posts = append(posts, post)
 		}
 	}
-
-	log.Info().
-		Int("total_posts", len(posts)).
-		Int("cached_posts", len(cachedPosts)).
-		Int("db_fetched", len(missingPostIDs)).
-		Str("first_timestamp", firstTimestamp).
-		Dur("duration_ms", time.Since(start)).
-		Msg("Posts fetched with time-window caching")
 
 	if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
@@ -155,69 +142,68 @@ func IndexPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	start := time.Now()
-
-	var valid bool
-	var username string
-	userID, username, valid := models.ValidSession(r, db)
+	userID, username, valid := userRepo.ValidSession(r, db)
 
 	log := logger.WithRequest(r, userID)
+	log.Info().Msg("Fetching posts by category")
 
-	if r.Method != http.MethodGet {
-		log.Warn().Msg("Invalid method for category posts")
-		utils.RenderError(db, w, r, http.StatusMethodNotAllowed, valid, username)
-		return
-	}
-
-	categoryID, err := strconv.Atoi(r.PathValue("id"))
+	categoryIDStr := strings.TrimPrefix(r.URL.Path, "/category/")
+	categoryID, err := strconv.Atoi(categoryIDStr)
 	if err != nil {
-		log.Warn().Str("category_id", r.PathValue("id")).Msg("Invalid category ID")
+		log.Warn().Str("category_id", categoryIDStr).Msg("Invalid category ID format")
 		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
 		return
 	}
 
-	if e := models.CheckCategories(db, []int{categoryID}); e != nil {
+	if e := categoryRepo.CheckCategories(db, []int{categoryID}); e != nil {
 		log.Warn().Int("category_id", categoryID).Msg("Category not found")
-		utils.RenderError(db, w, r, 404, valid, username)
+		utils.RenderError(db, w, r, http.StatusNotFound, valid, username)
 		return
 	}
 
-	pid := r.FormValue("PageID")
-	page, _ := strconv.Atoi(pid)
+	pageIDStr := r.FormValue("PageID")
+	page, err := strconv.Atoi(pageIDStr)
+	if err != nil && pageIDStr != "" {
+		log.Warn().Str("page_id", pageIDStr).Msg("Invalid page ID format")
+		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
+		return
+	}
+
 	offset := (page - 1) * 10
 	if offset < 0 {
 		offset = 0
 	}
 
-	postIDs, firstTimestamp, err := models.FetchPostIDsForCategoryPage(db, categoryID, offset, 10)
+	postIDs, _, err := postRepo.FetchPostIDsForCategoryPage(db, categoryID, offset, 10)
 	if err != nil {
-		log.Error().Err(err).Int("category_id", categoryID).Int("offset", offset).Msg("Failed to fetch post IDs")
+		log.Error().Err(err).Int("category_id", categoryID).Int("offset", offset).Msg("Failed to fetch category post IDs")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
 
 	if len(postIDs) == 0 {
 		if offset > 0 {
-			log.Warn().Int("offset", offset).Int("category_id", categoryID).Msg("No posts found for category page")
+			log.Warn().Int("offset", offset).Msg("No posts found for category offset")
 			utils.RenderError(db, w, r, 404, valid, username)
 			return
 		}
-		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []models.Post{}, valid, username); err != nil {
+		if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, []model.Post{}, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
 		return
 	}
+
 	cachedPosts := getCachedPosts(postIDs)
-	//missing
 	missingIDs := []int{}
 	for _, id := range postIDs {
-		if _, found := cachedPosts[id]; !found {
+		if _, found := cachedPosts[model.PostID(id)]; !found {
 			missingIDs = append(missingIDs, id)
 		}
 	}
+
 	if len(missingIDs) > 0 {
-		dbPosts, err := models.FetchPostsByIDs(db, missingIDs)
+		dbPosts, err := postRepo.FetchPostsByIDs(db, missingIDs)
 		if err != nil {
 			log.Error().Err(err).Ints("missing_ids", missingIDs).Msg("Failed to fetch missing posts")
 		} else {
@@ -227,20 +213,13 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			}
 		}
 	}
-	posts := make([]models.Post, 0, len(postIDs))
+
+	posts := make([]model.Post, 0, len(postIDs))
 	for _, id := range postIDs {
-		if post, found := cachedPosts[id]; found {
+		if post, found := cachedPosts[model.PostID(id)]; found {
 			posts = append(posts, post)
 		}
 	}
-	log.Info().
-		Int("total_posts", len(posts)).
-		Int("cached_posts", len(cachedPosts)).
-		Int("db_fetched", len(missingIDs)).
-		Int("category_id", categoryID).
-		Str("first_timestamp", firstTimestamp).
-		Dur("duration_ms", time.Since(start)).
-		Msg("Category posts fetched with time-window caching")
 
 	if err := utils.RenderTemplate(db, w, r, "home", http.StatusOK, posts, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
@@ -250,95 +229,71 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func ShowPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	start := time.Now()
-
-	var valid bool
-	var username string
-	userID, username, valid := models.ValidSession(r, db)
+	userID, username, valid := userRepo.ValidSession(r, db)
 
 	log := logger.WithRequest(r, userID)
+	log.Info().Msg("Showing post detail")
 
 	if r.Method != http.MethodGet {
 		log.Warn().Msg("Invalid method for show post")
 		utils.RenderError(db, w, r, http.StatusMethodNotAllowed, valid, username)
 		return
 	}
-	postID, err := strconv.Atoi(r.PathValue("id"))
+
+	id := r.PathValue("id")
+	postID, err := strconv.Atoi(id)
 	if err != nil {
-		log.Warn().Str("post_id", r.PathValue("id")).Msg("Invalid post ID")
+		log.Warn().Str("post_id", id).Msg("Invalid post ID format")
 		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
 		return
 	}
 
-	cacheKey := "post_" + strconv.Itoa(postID)
-
+	cacheKey := fmt.Sprintf("post_%d", postID)
 	postDetail, found := getPostDetailFromCache(cacheKey)
 	if found {
-		log.Info().
-			Int("post_id", postID).
-			Bool("cache_hit", true).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Post fetched from cache")
+		log.Debug().Int("post_id", postID).Msg("Post detail fetched from cache")
 		if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, postDetail, valid, username); err != nil {
 			log.Error().Err(err).Msg("Error rendering template")
 			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		}
-		// If type assertion failed, delete invalid cache
-		cache.AppCache.Delete(cacheKey)
+		return
 	}
 
-	// If cache miss
-	log.Debug().Str("cache_key", cacheKey).Msg("Cache miss")
-
-	postDetail, statusCode, err := models.FetchPost(db, postID)
+	postDetail, statusCode, err := postRepo.FetchPost(db, model.PostID(postID))
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("post_id", postID).
-			Int("status", statusCode).
-			Dur("duration_ms", time.Since(start)).
-			Msg("Failed to fetch post")
+		log.Error().Err(err).Int("post_id", postID).Msg("Failed to fetch post detail")
 		utils.RenderError(db, w, r, statusCode, valid, username)
 		return
 	}
 
-	// Cache the entire PostDetail, not just the Post
-	if err == nil && postDetail.Post.ID != 0 {
-		cache.AppCache.Set(cacheKey, postDetail, config.CacheTTL)
-	}
+	cache.AppCache.Set(cacheKey, postDetail, config.CacheTTL)
 
-	err = utils.RenderTemplate(db, w, r, "post", statusCode, postDetail, valid, username)
-	if err != nil {
-		log.Error().Err(err).Msg("Error rendering post template")
+	if err := utils.RenderTemplate(db, w, r, "post", http.StatusOK, postDetail, valid, username); err != nil {
+		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
-
-	log.Info().
-		Int("post_id", postID).
-		Bool("cache_hit", false).
-		Dur("duration_ms", time.Since(start)).
-		Msg("Post fetched successfully")
 }
 
 func GetPostCreationForm(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-	var username string
+	userID, username, valid := userRepo.ValidSession(r, db)
 
-	userID, username, valid := models.ValidSession(r, db)
+	log := logger.WithRequest(r, userID)
+
 	if !valid {
+		log.Warn().Msg("Unauthorized access to post creation form")
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
 	if r.Method != http.MethodGet {
+		log.Warn().Msg("Invalid method for post creation form")
 		utils.RenderError(db, w, r, http.StatusMethodNotAllowed, valid, username)
 		return
 	}
 
-	if err := utils.RenderTemplate(db, w, r, "post-form", http.StatusOK, nil, valid, username); err != nil {
-		log := logger.WithRequest(r, userID)
-		log.Error().Err(err).Msg("Error rendering post creation form")
+	if err := utils.RenderTemplate(db, w, r, "createpost", http.StatusOK, nil, valid, username); err != nil {
+		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
 	}
@@ -347,15 +302,13 @@ func GetPostCreationForm(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
 
-	var user_id int
-	var valid bool
-
-	if user_id, _, valid = models.ValidSession(r, db); !valid {
+	userID, _, valid := userRepo.ValidSession(r, db)
+	if !valid {
 		w.WriteHeader(401)
 		return
 	}
 
-	log := logger.WithRequest(r, user_id)
+	log := logger.WithRequest(r, userID)
 	log.Info().Msg("Creating new post")
 
 	if r.Method != http.MethodPost {
@@ -364,9 +317,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	// Parse multipart form
-	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10 MB limit
-		log.Println("Error parsing multipart form:", err)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		log.Error().Err(err).Msg("Failed to parse form")
 		w.WriteHeader(400)
 		return
@@ -376,7 +327,6 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	content := r.FormValue("content")
 	catids := r.Form["categories"]
 
-	// Handle categories (might be comma separated string in one element or multiple elements)
 	if len(catids) > 0 && strings.Contains(catids[0], ",") {
 		catids = strings.Split(catids[0], ",")
 	}
@@ -405,47 +355,43 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		catidsInt = append(catidsInt, id)
 	}
 
-	err := models.CheckCategories(db, catidsInt)
+	err := categoryRepo.CheckCategories(db, catidsInt)
 	if err != nil {
 		log.Warn().Ints("category_ids", catidsInt).Msg("Invalid categories")
 		w.WriteHeader(400)
 		return
 	}
 
-	// Handle Image Upload
 	var imagePath string
-
-	// Check for pre-uploaded image URL (from Azure)
 	imageUrl := r.FormValue("image_url")
 	if imageUrl != "" {
 		imagePath = imageUrl
 	} else {
-		// Fallback to local upload
 		file, header, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
 			storage := utils.NewLocalStorage(config.BasePath + "web/assets/uploads")
 			imagePath, err = storage.Save(file, header)
 			if err != nil {
-				log.Println("Error saving image:", err)
+				log.Error().Err(err).Msg("Error saving image")
 				w.WriteHeader(500)
 				return
 			}
 		} else if err != http.ErrMissingFile {
-			log.Println("Error retrieving image:", err)
+			log.Error().Err(err).Msg("Error retrieving image")
 			w.WriteHeader(400)
 			return
 		}
 	}
 
-	pid, err := models.StorePost(db, user_id, title, content, imagePath)
+	pid, err := postRepo.StorePost(db, model.AccountID(userID), title, content, imagePath)
 	if err != nil {
-		log.Println("Error storing post:", err)
+		log.Error().Err(err).Msg("Error storing post")
 		w.WriteHeader(400)
 		return
 	}
 
-	_, err = models.StoreAllPostCategories(db, pid, catidsInt)
+	_, err = postRepo.StoreAllPostCategories(db, pid, catidsInt)
 	if err != nil {
 		log.Error().Err(err).Int64("post_id", pid).Msg("Failed to store post categories")
 		w.WriteHeader(400)
@@ -469,10 +415,8 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func MyCreatedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-	var username string
-	var user_id int
-	if user_id, username, valid = models.ValidSession(r, db); !valid {
+	userID, username, valid := userRepo.ValidSession(r, db)
+	if !valid {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
@@ -491,9 +435,9 @@ func MyCreatedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if page < 0 {
 		page = 0
 	}
-	log := logger.WithRequest(r, user_id)
+	log := logger.WithRequest(r, userID)
 
-	posts, statusCode, err := models.FetchCreatedPostsByUser(db, user_id, page)
+	posts, statusCode, err := postRepo.FetchCreatedPostsByUser(db, model.AccountID(userID), page)
 	if err != nil {
 		log.Error().Err(err).Int("page", page).Msg("Error fetching user created posts")
 		utils.RenderError(db, w, r, statusCode, valid, username)
@@ -512,10 +456,8 @@ func MyCreatedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func MyLikedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-	var username string
-	var user_id int
-	if user_id, username, valid = models.ValidSession(r, db); !valid {
+	userID, username, valid := userRepo.ValidSession(r, db)
+	if !valid {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
@@ -534,9 +476,9 @@ func MyLikedPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if page < 0 {
 		page = 0
 	}
-	log := logger.WithRequest(r, user_id)
+	log := logger.WithRequest(r, userID)
 
-	posts, statusCode, err := models.FetchLikedPostsByUser(db, user_id, page)
+	posts, statusCode, err := postRepo.FetchLikedPostsByUser(db, model.AccountID(userID), page)
 	if err != nil {
 		log.Error().Err(err).Int("page", page).Msg("Error fetching user liked posts")
 		utils.RenderError(db, w, r, statusCode, valid, username)
@@ -560,10 +502,8 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	var user_id int
-	var valid bool
-
-	if user_id, _, valid = models.ValidSession(r, db); !valid {
+	userID, _, valid := userRepo.ValidSession(r, db)
+	if !valid {
 		w.WriteHeader(401)
 		return
 	}
@@ -575,12 +515,12 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	userReaction := r.FormValue("reaction")
 	id := r.FormValue("post_id")
-	post_id, err := strconv.Atoi(id)
+	post_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		w.WriteHeader(400)
 		return
 	}
-	likeCount, dislikeCount, err := models.ReactToPost(db, user_id, post_id, userReaction)
+	likeCount, dislikeCount, err := postRepo.ReactToPost(db, model.AccountID(userID), model.PostID(post_id), userReaction)
 	if err != nil {
 		w.WriteHeader(500)
 		return
@@ -588,7 +528,6 @@ func ReactToPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	cache.AppCache.Delete(fmt.Sprintf("post_%d", post_id))
 
-	// Return the new count as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"likesCount": likeCount, "dislikesCount": dislikeCount})
 }
@@ -598,18 +537,16 @@ func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var user_id int
-	var valid bool
-	user_id, _, valid = models.ValidSession(r, db)
+	userID, _, valid := userRepo.ValidSession(r, db)
 	if !valid {
 		w.WriteHeader(401)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
 		return
 	}
 
-	log := logger.WithRequest(r, user_id)
+	log := logger.WithRequest(r, userID)
 
-	postID, err := strconv.Atoi(r.PathValue("id"))
+	postID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		log.Warn().Str("post_id", r.PathValue("id")).Msg("Invalid post ID")
 		w.WriteHeader(400)
@@ -617,9 +554,9 @@ func DeletePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	statusCode, err := models.DeletePost(db, user_id, postID)
+	statusCode, err := postRepo.DeletePost(db, model.AccountID(userID), model.PostID(postID))
 	if err != nil {
-		log.Error().Err(err).Int("post_id", postID).Msg("Failed to delete post")
+		log.Error().Int64("post_id", postID).Err(err).Msg("Failed to delete post")
 		w.WriteHeader(statusCode)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return

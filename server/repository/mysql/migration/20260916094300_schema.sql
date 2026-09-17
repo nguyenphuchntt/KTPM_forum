@@ -52,12 +52,17 @@ CREATE TABLE posts (
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     media_id BIGINT NULL,
+    like_count INT NOT NULL DEFAULT 0,
+    dislike_count INT NOT NULL DEFAULT 0,
+    comment_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
     FOREIGN KEY (media_id) REFERENCES medias(id) ON DELETE RESTRICT,
     INDEX idx_user_id (user_id),
     INDEX idx_created_at (created_at),
-    INDEX idx_media_id (media_id)
+    INDEX idx_media_id (media_id),
+    INDEX idx_like_count (like_count),
+    INDEX idx_comment_count (comment_count)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE profiles (
@@ -104,9 +109,12 @@ CREATE TABLE comments (
 
 CREATE TABLE likes (
     user_id CHAR(36) NOT NULL,
+    target_type ENUM('post', 'comment') NOT NULL,
     target_id BIGINT NOT NULL,
+    reaction ENUM('like', 'dislike') NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, target_id),
+    PRIMARY KEY (user_id, target_type, target_id),
     FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    INDEX idx_target_id (target_id)
+    INDEX idx_target (target_type, target_id),
+    INDEX idx_target_reaction (target_type, target_id, reaction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

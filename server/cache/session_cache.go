@@ -3,13 +3,15 @@ package cache
 import (
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type SessionCacheEntry struct {
-	UserID     int
-	Username   string
-	ExpiresAt  time.Time
-	CachedAt   time.Time
+	UserID    uuid.UUID
+	Username  string
+	ExpiresAt time.Time
+	CachedAt  time.Time
 }
 
 type SessionCache struct {
@@ -48,7 +50,7 @@ func (sc *SessionCache) Get(sessionID string) (SessionCacheEntry, bool) {
 	return entry, true
 }
 
-func (sc *SessionCache) Set(sessionID string, userID int, username string, expiresAt time.Time) {
+func (sc *SessionCache) Set(sessionID string, userID uuid.UUID, username string, expiresAt time.Time) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 
@@ -67,7 +69,7 @@ func (sc *SessionCache) Delete(sessionID string) {
 	delete(sc.cache, sessionID)
 }
 
-func (sc *SessionCache) DeleteByUserID(userID int) {
+func (sc *SessionCache) DeleteByUserID(userID uuid.UUID) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 

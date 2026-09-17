@@ -6,13 +6,12 @@ import (
 	"net/http"
 	"strings"
 
-	models "forum/server/model"
+	userRepo "forum/server/repository/mysql/user"
 	"forum/server/utils"
 )
 
 func GetRegisterPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-	if _, _, valid = models.ValidSession(r, db); valid {
+	if _, _, valid := userRepo.ValidSession(r, db); valid {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
@@ -30,8 +29,7 @@ func GetRegisterPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func Signup(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-	if _, _, valid = models.ValidSession(r, db); valid {
+	if _, _, valid := userRepo.ValidSession(r, db); valid {
 		w.WriteHeader(302)
 		return
 	}
@@ -55,9 +53,9 @@ func Signup(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	_, err := models.StoreUser(db, email, username, password)
+	_, err := userRepo.StoreUser(db, email, username, password)
 	if err != nil {
-		if err.Error() == "UNIQUE constraint failed: users.username" {
+		if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "UNIQUE") {
 			w.WriteHeader(304)
 			return
 		}

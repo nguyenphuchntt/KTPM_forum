@@ -2,21 +2,20 @@ package controllers
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 
 	"forum/server/config"
 	"forum/server/logger"
-	models "forum/server/model"
+	userRepo "forum/server/repository/mysql/user"
 	"forum/server/utils"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
 func GetLoginPage(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var valid bool
-
-	if _, _, valid = models.ValidSession(r, db); valid {
+	if _, _, valid := userRepo.ValidSession(r, db); valid {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
@@ -38,9 +37,7 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	start := time.Now()
 	log := logger.WithRequest(r, 0)
 
-	var valid bool
-
-	if _, _, valid = models.ValidSession(r, db); valid {
+	if _, _, valid := userRepo.ValidSession(r, db); valid {
 		log.Warn().Msg("User already logged in")
 		w.WriteHeader(302)
 		return
@@ -71,10 +68,10 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	// get user information from database
-	user_id, hashedPassword, err := models.GetUserInfo(db, username)
+	// get user credentials from database
+	creds, err := userRepo.GetCredentialsByUsername(db, username)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, userRepo.ErrAccountNotFound) || errors.Is(err, sql.ErrNoRows) {
 			log.Warn().Str("username", username).Msg("User not found")
 			w.WriteHeader(404)
 			return
@@ -85,10 +82,10 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	// Verify the password
-	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(creds.Password), []byte(password)); err != nil {
 		log.Warn().
 			Str("username", username).
-			Int("user_id", user_id).
+			Str("user_id", creds.UserID.String()).
 			Msg("Invalid password attempt")
 		w.WriteHeader(401)
 		return
@@ -101,9 +98,9 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	err = models.StoreSession(db, user_id, sessionID, time.Now().Add(10*time.Hour))
+	err = userRepo.StoreSession(db, creds.UserID, sessionID, time.Now().Add(10*time.Hour))
 	if err != nil {
-		log.Error().Err(err).Int("user_id", user_id).Msg("Failed to store session")
+		log.Error().Err(err).Str("user_id", creds.UserID.String()).Msg("Failed to store session")
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -118,7 +115,7 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	log.Info().
 		Str("username", username).
-		Int("user_id", user_id).
+		Str("user_id", creds.UserID.String()).
 		Dur("duration_ms", time.Since(start)).
 		Msg("User logged in successfully")
 
@@ -126,11 +123,10 @@ func Signin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 func Logout(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	if userID, username, valid := models.ValidSession(r, db); valid {
-		log := logger.WithRequest(r, userID)
+	if userID, username, valid := userRepo.ValidSession(r, db); valid {
+		log := logger.WithRequest(r, 0)
 
-		// Use the new model function
-		err := models.DeleteUserSession(db, userID)
+		err := userRepo.DeleteUserSession(db, userID)
 		if err != nil {
 			log.Error().Err(err).Msg("Error deleting session during logout")
 			http.Error(w, "Error while logging out!", http.StatusInternalServerError)
