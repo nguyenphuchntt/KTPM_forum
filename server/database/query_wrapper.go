@@ -2,107 +2,51 @@ package database
 
 import (
 	"database/sql"
-	"time"
 
-	"forum/server/metric"
+	"github.com/jmoiron/sqlx"
 )
 
-// QueryWithMetrics wraps db.Query with metrics collection
-func QueryWithMetrics(db *sql.DB, queryType, query string, args ...interface{}) (*sql.Rows, error) {
-	start := time.Now()
-	rows, err := db.Query(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-	if err != nil {
-		metrics.DbQueryErrors.WithLabelValues(queryType).Inc()
-	}
-
-	return rows, err
+// rebind converts the `?` placeholders used throughout the repositories into
+// the `$1, $2, ...` form PostgreSQL expects. Keeping the queries written with
+// `?` means they stay portable and callers never have to care about the driver.
+func rebind(query string) string {
+	return sqlx.Rebind(sqlx.DOLLAR, query)
 }
 
-// ExecWithMetrics wraps db.Exec with metrics collection
+// QueryWithMetrics wraps db.Query with rebind
+func QueryWithMetrics(db *sql.DB, queryType, query string, args ...interface{}) (*sql.Rows, error) {
+	return db.Query(rebind(query), args...)
+}
+
+// ExecWithMetrics wraps db.Exec with rebind
 func ExecWithMetrics(db *sql.DB, queryType, query string, args ...interface{}) (sql.Result, error) {
-	start := time.Now()
-	result, err := db.Exec(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-	if err != nil {
-		metrics.DbQueryErrors.WithLabelValues(queryType).Inc()
-	}
-
-	return result, err
+	return db.Exec(rebind(query), args...)
 }
 
 func ExecWithMetricsTx(tx *sql.Tx, queryType, query string, args ...interface{}) (sql.Result, error) {
-	start := time.Now()
-	result, err := tx.Exec(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-	if err != nil {
-		metrics.DbQueryErrors.WithLabelValues(queryType).Inc()
-	}
-
-	return result, err
+	return tx.Exec(rebind(query), args...)
 }
 
-// QueryRowWithMetricsTx wraps tx.QueryRow with metrics collection
+// QueryRowWithMetricsTx wraps tx.QueryRow with rebind
 func QueryRowWithMetricsTx(tx *sql.Tx, queryType, query string, args ...interface{}) *sql.Row {
-	start := time.Now()
-	row := tx.QueryRow(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-
-	return row
+	return tx.QueryRow(rebind(query), args...)
 }
 
-// QueryRowWithMetrics wraps db.QueryRow with metrics collection
-// Note: QueryRow doesn't return error until Scan is called, so we only measure duration here
+// QueryRowWithMetrics wraps db.QueryRow with rebind
 func QueryRowWithMetrics(db *sql.DB, queryType, query string, args ...interface{}) *sql.Row {
-	start := time.Now()
-	row := db.QueryRow(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-
-	return row
+	return db.QueryRow(rebind(query), args...)
 }
 
-// QueryRowWithMetricsAndError wraps db.QueryRow and records errors when Scan fails
+// QueryRowWithMetricsAndError wraps db.QueryRow
 func QueryRowWithMetricsAndError(db *sql.DB, queryType, query string, args ...interface{}) (*sql.Row, func(error)) {
-	start := time.Now()
-	row := db.QueryRow(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-
-	// Return row and a callback to record errors
-	errorCallback := func(scanErr error) {
-		if scanErr != nil && scanErr != sql.ErrNoRows {
-			metrics.DbQueryErrors.WithLabelValues(queryType).Inc()
-		}
-	}
-
+	row := db.QueryRow(rebind(query), args...)
+	errorCallback := func(scanErr error) {}
 	return row, errorCallback
 }
 
-// QueryRowWithMetricsAndErrorTx wraps tx.QueryRow and records errors when Scan fails
+// QueryRowWithMetricsAndErrorTx wraps tx.QueryRow
 func QueryRowWithMetricsAndErrorTx(tx *sql.Tx, queryType, query string, args ...interface{}) (*sql.Row, func(error)) {
-	start := time.Now()
-	row := tx.QueryRow(query, args...)
-	duration := time.Since(start).Seconds()
-
-	metrics.DbQueryDuration.WithLabelValues(queryType).Observe(duration)
-
-	// Return row and a callback to record errors
-	errorCallback := func(scanErr error) {
-		if scanErr != nil && scanErr != sql.ErrNoRows {
-			metrics.DbQueryErrors.WithLabelValues(queryType).Inc()
-		}
-	}
-
+	row := tx.QueryRow(rebind(query), args...)
+	errorCallback := func(scanErr error) {}
 	return row, errorCallback
 }

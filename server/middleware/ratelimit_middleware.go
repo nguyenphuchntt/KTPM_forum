@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"forum/server/config"
-	metrics "forum/server/metric"
 	"forum/server/middleware/ratelimit"
 	userRepo "forum/server/repository/mysql/user"
 )
@@ -56,7 +55,6 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 
 		// 1. Check global rate limit
 		if !m.globalLimiter.Allow("global") {
-			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, "global").Inc()
 			m.sendRateLimitError(w, r, "Too many requests globally. Please try again later.")
 			return
 		}
@@ -80,11 +78,6 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 		}
 
 		if !limiter.Allow(limitKey) {
-			limiterType := "ip"
-			if userID != "" {
-				limiterType = "user"
-			}
-			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, limiterType).Inc()
 			m.sendRateLimitError(w, r, "Rate limit exceeded. Please slow down.")
 			return
 		}
@@ -220,8 +213,6 @@ func (e *EndpointRateLimiter) LimitLogin(next http.HandlerFunc, db *sql.DB) http
 			log.Printf("[RATE_LIMIT] Type=login | IP=%s | Limit=%d/%v",
 				ip, e.config.LoginAttemptsPerWindow, e.config.LoginWindowSize)
 
-			metrics.RateLimitDropsTotal.WithLabelValues("/signin", "login").Inc()
-
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -245,8 +236,6 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 		if !e.registerLimiter.Allow(key) {
 			log.Printf("[RATE_LIMIT] Type=register | IP=%s | Limit=%d/%v",
 				ip, e.config.RegisterAttemptsPerWindow, e.config.RegisterWindowSize)
-
-			metrics.RateLimitDropsTotal.WithLabelValues("/signup", "register").Inc()
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
@@ -276,8 +265,6 @@ func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB)
 			log.Printf("[RATE_LIMIT] Type=post | UserID=%s | Limit=%d/hour",
 				userID, e.config.PostsPerHour)
 
-			metrics.RateLimitDropsTotal.WithLabelValues("/post/createpost", "post").Inc()
-
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -305,8 +292,6 @@ func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.
 		if !e.commentLimiter.Allow(key) {
 			log.Printf("[RATE_LIMIT] Type=comment | UserID=%s | Limit=%d/hour",
 				userID, e.config.CommentsPerHour)
-
-			metrics.RateLimitDropsTotal.WithLabelValues("/post/addcommentREQ", "comment").Inc()
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")

@@ -26,8 +26,8 @@ func FetchCommentsByPostID(db *sql.DB, postID int64) ([]model.Comment, error) {
 			c.post_id,
 			c.parent_comment_id,
 			c.content,
-			COALESCE(SUM(l.reaction = 'like'), 0) AS likes,
-			COALESCE(SUM(l.reaction = 'dislike'), 0) AS dislikes,
+			COUNT(*) FILTER (WHERE l.reaction = 'like') AS likes,
+			COUNT(*) FILTER (WHERE l.reaction = 'dislike') AS dislikes,
 			c.created_at
 		FROM comments c
 		INNER JOIN accounts a ON a.id = c.user_id
@@ -98,8 +98,8 @@ func FetchCommentListItems(db *sql.DB, postID int64, offset, limit int) ([]Comme
 			a.username,
 			c.content,
 			c.created_at,
-			COALESCE(SUM(l.reaction = 'like'), 0) AS likes,
-			COALESCE(SUM(l.reaction = 'dislike'), 0) AS dislikes
+			COUNT(*) FILTER (WHERE l.reaction = 'like') AS likes,
+			COUNT(*) FILTER (WHERE l.reaction = 'dislike') AS dislikes
 		FROM comments c
 		INNER JOIN accounts a ON a.id = c.user_id
 		LEFT JOIN likes l ON l.target_type = 'comment' AND l.target_id = c.id
@@ -145,15 +145,12 @@ func StoreComment(db *sql.DB, userID uuid.UUID, postID int64, content string) (i
 	}
 	defer tx.Rollback()
 
-	query := `INSERT INTO comments (user_id, post_id, content) VALUES (?,?,?)`
-	result, err := database.ExecWithMetricsTx(tx, "insert_comment", query, userID, postID, content)
-	if err != nil {
+	query := `INSERT INTO comments (user_id, post_id, content) VALUES (?,?,?) RETURNING id`
+	var commentID int64
+	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "insert_comment", query, userID, postID, content)
+	if err := row.Scan(&commentID); err != nil {
+		recordError(err)
 		return 0, fmt.Errorf("error inserting comment: %v", err)
-	}
-
-	commentID, err := result.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("error reading comment id: %v", err)
 	}
 
 	queryUpdatePost := `UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?`
@@ -201,7 +198,7 @@ func PostIDForComment(db *sql.DB, commentID int64) (int64, error) {
 // FetchCommentTimeByID returns a comment's creation time formatted for display.
 func FetchCommentTimeByID(db *sql.DB, commentID int64) (string, error) {
 	var commentTime string
-	query := "SELECT DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at FROM comments WHERE id = ?"
+	query := "SELECT TO_CHAR(created_at, 'MM/DD/YYYY HH12:MI AM') AS formatted_created_at FROM comments WHERE id = ?"
 	row, recordError := database.QueryRowWithMetricsAndError(db, "select_comment_time", query, commentID)
 	err := row.Scan(&commentTime)
 	recordError(err)
@@ -258,8 +255,8 @@ func CountCommentReactions(db *sql.DB, commentID int64) (int, int, error) {
 	row, recordError := database.QueryRowWithMetricsAndError(
 		db, "select_comment_reaction_counts",
 		`SELECT
-			COALESCE(SUM(reaction = 'like'), 0),
-			COALESCE(SUM(reaction = 'dislike'), 0)
+			COUNT(*) FILTER (WHERE reaction = 'like'),
+			COUNT(*) FILTER (WHERE reaction = 'dislike')
 		 FROM likes WHERE target_type = 'comment' AND target_id = ?`,
 		commentID,
 	)

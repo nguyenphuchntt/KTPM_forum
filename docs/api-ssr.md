@@ -4,6 +4,38 @@
 >
 > **Lưu ý:** phần ghi **CURRENT** là hành vi đang được đăng ký trong `server/routes/routes.go`. Phần **PROPOSED** chỉ là thiết kế mục tiêu; các route `/api/v1` chưa được triển khai.
 
+## Tóm tắt API JSON cần làm
+
+Các API-v1 cần triển khai song song với các route SSR hiện tại:
+
+| Nhóm | Method | Endpoint | Mục đích |
+|---|---|---|---|
+| Auth | `POST` | `/api/v1/auth/signin` | Đăng nhập bằng JSON, tạo session |
+| Auth | `POST` | `/api/v1/auth/signup` | Đăng ký tài khoản bằng JSON |
+| Auth | `POST` | `/api/v1/auth/logout` | Đăng xuất và hủy session |
+| Auth | `GET` | `/api/v1/auth/me` | Lấy thông tin user hiện tại |
+| Posts | `GET` | `/api/v1/posts` | Danh sách post, có pagination/filter |
+| Posts | `GET` | `/api/v1/posts/{id}` | Chi tiết post |
+| Posts | `POST` | `/api/v1/posts` | Tạo post bằng JSON hoặc multipart |
+| Posts | `DELETE` | `/api/v1/posts/{id}` | Xóa post, kiểm tra quyền sở hữu |
+| Posts | `POST` | `/api/v1/posts/{id}/reactions` | Like/dislike post |
+| Posts | `GET` | `/api/v1/me/posts` | Danh sách post của user hiện tại |
+| Posts | `GET` | `/api/v1/me/liked-posts` | Danh sách post đã like |
+| Comments | `GET` | `/api/v1/posts/{post_id}/comments` | Danh sách comment của post |
+| Comments | `POST` | `/api/v1/posts/{post_id}/comments` | Tạo comment bằng JSON |
+| Comments | `POST` | `/api/v1/comments/{comment_id}/reactions` | Like/dislike comment |
+| Categories | `GET` | `/api/v1/categories` | Danh sách category |
+| Categories | `GET` | `/api/v1/categories/{id}` | Chi tiết category |
+
+Quy ước chung:
+
+- Request và response dùng `application/json`; riêng tạo post có thể dùng `multipart/form-data` nếu upload chưa tách riêng.
+- Collection response dùng `{ "data": [], "pagination": { ... } }`.
+- Lỗi dùng `{ "error": { "code": "...", "message": "...", "details": { ... } } }`.
+- Giữ cookie session hiện tại; không bắt buộc chuyển sang JWT.
+- Các route SSR và route legacy tiếp tục hoạt động trong giai đoạn chuyển đổi.
+- Upload SAS và webhook blob là infrastructure API riêng, không gộp vào resource API của post.
+
 ## 1. Quy ước
 
 ### SSR

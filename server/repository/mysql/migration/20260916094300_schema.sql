@@ -1,120 +1,137 @@
-SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS post_category CASCADE;
+DROP TABLE IF EXISTS likes CASCADE;
+DROP TABLE IF EXISTS comments CASCADE;
+DROP TABLE IF EXISTS posts CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
+DROP TABLE IF EXISTS medias CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS accounts CASCADE;
 
-DROP TABLE IF EXISTS post_category;
-DROP TABLE IF EXISTS likes;
-DROP TABLE IF EXISTS comments;
-DROP TABLE IF EXISTS posts;
-DROP TABLE IF EXISTS profiles;
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS medias;
-DROP TABLE IF EXISTS categories;
-DROP TABLE IF EXISTS accounts;
+DROP TYPE IF EXISTS target_type_enum;
+DROP TYPE IF EXISTS reaction_enum;
 
-SET FOREIGN_KEY_CHECKS = 1;
+CREATE TYPE target_type_enum AS ENUM ('post', 'comment');
+CREATE TYPE reaction_enum AS ENUM ('like', 'dislike');
+
+-- Keeps updated_at current on UPDATE; PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP.
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE TABLE accounts (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'user',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_accounts_updated_at
+    BEFORE UPDATE ON accounts
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TABLE categories (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     label VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE medias (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     object_key TEXT NOT NULL,
     public_url TEXT NOT NULL,
     mime_type VARCHAR(255) NOT NULL,
     size BIGINT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_medias_updated_at
+    BEFORE UPDATE ON medias
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TABLE sessions (
-    user_id CHAR(36) UNIQUE NOT NULL,
-    session_id VARCHAR(255) NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    INDEX idx_session_id (session_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    session_id VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 
 CREATE TABLE posts (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id CHAR(36) NOT NULL,
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    media_id BIGINT NULL,
+    media_id BIGINT NULL REFERENCES medias(id) ON DELETE RESTRICT,
     like_count INT NOT NULL DEFAULT 0,
     dislike_count INT NOT NULL DEFAULT 0,
     comment_count INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (media_id) REFERENCES medias(id) ON DELETE RESTRICT,
-    INDEX idx_user_id (user_id),
-    INDEX idx_created_at (created_at),
-    INDEX idx_media_id (media_id),
-    INDEX idx_like_count (like_count),
-    INDEX idx_comment_count (comment_count)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_posts_user_id ON posts (user_id);
+CREATE INDEX idx_posts_created_at ON posts (created_at);
+CREATE INDEX idx_posts_media_id ON posts (media_id);
+CREATE INDEX idx_posts_like_count ON posts (like_count);
+CREATE INDEX idx_posts_comment_count ON posts (comment_count);
 
 CREATE TABLE profiles (
-    account_id CHAR(36) PRIMARY KEY,
+    account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
     first_name VARCHAR(255) NOT NULL DEFAULT '',
     last_name VARCHAR(255) NOT NULL DEFAULT '',
     location VARCHAR(255) NOT NULL DEFAULT '',
-    avatar_media_id BIGINT NULL,
-    cover_media_id BIGINT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (avatar_media_id) REFERENCES medias(id) ON DELETE SET NULL,
-    FOREIGN KEY (cover_media_id) REFERENCES medias(id) ON DELETE SET NULL,
-    INDEX idx_avatar_media_id (avatar_media_id),
-    INDEX idx_cover_media_id (cover_media_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    avatar_media_id BIGINT NULL REFERENCES medias(id) ON DELETE SET NULL,
+    cover_media_id BIGINT NULL REFERENCES medias(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_profiles_updated_at
+    BEFORE UPDATE ON profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_profiles_avatar_media_id ON profiles (avatar_media_id);
+CREATE INDEX idx_profiles_cover_media_id ON profiles (cover_media_id);
 
 CREATE TABLE post_category (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    post_id BIGINT NOT NULL,
-    category_id BIGINT NOT NULL,
-    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_post_category (post_id, category_id),
-    INDEX idx_category_id (category_id),
-    INDEX idx_category_post (category_id, post_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id BIGSERIAL PRIMARY KEY,
+    post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    CONSTRAINT unique_post_category UNIQUE (post_id, category_id)
+);
+
+CREATE INDEX idx_post_category_category_id ON post_category (category_id);
+CREATE INDEX idx_post_category_category_post ON post_category (category_id, post_id);
 
 CREATE TABLE comments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id CHAR(36) NOT NULL,
-    post_id BIGINT NOT NULL,
-    parent_comment_id BIGINT NULL,
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    parent_comment_id BIGINT NULL REFERENCES comments(id) ON DELETE SET NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_comment_id) REFERENCES comments(id) ON DELETE SET NULL,
-    INDEX idx_post_id (post_id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_parent_comment_id (parent_comment_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_comments_post_id ON comments (post_id);
+CREATE INDEX idx_comments_user_id ON comments (user_id);
+CREATE INDEX idx_comments_parent_comment_id ON comments (parent_comment_id);
 
 CREATE TABLE likes (
-    user_id CHAR(36) NOT NULL,
-    target_type ENUM('post', 'comment') NOT NULL,
+    user_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    target_type target_type_enum NOT NULL,
     target_id BIGINT NOT NULL,
-    reaction ENUM('like', 'dislike') NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, target_type, target_id),
-    FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-    INDEX idx_target (target_type, target_id),
-    INDEX idx_target_reaction (target_type, target_id, reaction)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    reaction reaction_enum NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, target_type, target_id)
+);
+
+CREATE INDEX idx_likes_target ON likes (target_type, target_id);
+CREATE INDEX idx_likes_target_reaction ON likes (target_type, target_id, reaction);

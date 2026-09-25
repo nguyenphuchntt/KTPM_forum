@@ -77,10 +77,6 @@ func (uc *CommentUsecase) CreateComment(r *http.Request, req request.CreateComme
 		return nil, ErrCommentStoreFailed
 	}
 
-	// The comment count shown on the post detail changed, so drop the cached
-	// post row just like the post usecase does after a mutation.
-	invalidatePostCache(req.PostID)
-
 	count, err := commentRepository.CountCommentsByPostID(uc.db, req.PostID)
 	if err != nil {
 		return nil, ErrCommentLoadFailed
@@ -147,7 +143,7 @@ func (uc *CommentUsecase) ReactToComment(r *http.Request, req request.CommentRea
 	// The lookup doubles as an existence check: reacting to an unknown comment
 	// must fail, not silently insert a dangling likes row. It also gives us the
 	// post whose detail view shows the counts, so we can invalidate its cache.
-	postID, err := commentRepository.PostIDForComment(uc.db, req.CommentID)
+	_, err = commentRepository.PostIDForComment(uc.db, req.CommentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrCommentNotFound
@@ -159,8 +155,6 @@ func (uc *CommentUsecase) ReactToComment(r *http.Request, req request.CommentRea
 	if err != nil {
 		return nil, ErrReactionFailed
 	}
-
-	invalidatePostCache(postID)
 
 	return &response.CommentReactionResponse{
 		CommentID: int(req.CommentID),

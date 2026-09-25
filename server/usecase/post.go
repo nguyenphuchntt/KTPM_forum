@@ -3,7 +3,6 @@ package usecase
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"html"
 	"net/http"
 	"strconv"
@@ -11,8 +10,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"forum/server/cache"
-	"forum/server/config"
 	"forum/server/model"
 	categoryRepository "forum/server/repository/mysql/category"
 	postRepository "forum/server/repository/mysql/post"
@@ -88,7 +85,6 @@ func (uc *PostUsecase) CreatePost(input CreatePostInput) (*CreatePostResult, err
 		return nil, err
 	}
 
-	invalidatePostListCaches(categoryIDs)
 	return &CreatePostResult{
 		PostID:     postID,
 		Title:      title,
@@ -148,8 +144,6 @@ func (uc *PostUsecase) ReactToPost(input ReactToPostInput) (*ReactToPostResult, 
 	if err != nil {
 		return nil, err
 	}
-	invalidatePostListCaches(nil)
-	invalidatePostCache(input.PostID)
 
 	return &ReactToPostResult{Likes: likes, Dislikes: dislikes}, nil
 }
@@ -183,31 +177,20 @@ func (uc *PostUsecase) DeletePost(input DeletePostInput) (*DeletePostResult, int
 	if err != nil {
 		return nil, status, err
 	}
-	invalidatePostCache(input.PostID)
-	invalidatePostListCaches(nil)
 
 	return &DeletePostResult{PostID: input.PostID}, http.StatusOK, nil
 }
 
-// FetchPost returns a post detail, using the same cache key as the SSR controller.
+// FetchPost returns a post detail.
 func (uc *PostUsecase) FetchPost(postID int64) (postRepository.PostDetail, int, error) {
 	if postID <= 0 {
 		return postRepository.PostDetail{}, http.StatusBadRequest, ErrPostInvalidID
-	}
-
-	cacheKey := fmt.Sprintf("post_%d", postID)
-	if cached, found := cache.AppCache.Get(cacheKey); found {
-		if detail, ok := cached.(postRepository.PostDetail); ok {
-			return detail, http.StatusOK, nil
-		}
-		cache.AppCache.Delete(cacheKey)
 	}
 
 	detail, status, err := postRepository.FetchPost(uc.db, model.PostID(postID))
 	if err != nil {
 		return detail, status, err
 	}
-	cache.AppCache.Set(cacheKey, detail, config.CacheTTL)
 	return detail, status, nil
 }
 
@@ -248,20 +231,4 @@ func normalizeOffset(offset int) int {
 		return 0
 	}
 	return offset
-}
-
-func invalidatePostCache(postID int64) {
-	if cache.AppCache != nil && postID > 0 {
-		cache.AppCache.Delete(fmt.Sprintf("post_%d", postID))
-	}
-}
-
-func invalidatePostListCaches(categoryIDs []int) {
-	if cache.AppCache == nil {
-		return
-	}
-	cache.AppCache.Delete("index_posts_page_0")
-	for _, categoryID := range categoryIDs {
-		cache.AppCache.Delete("category_posts_" + strconv.Itoa(categoryID) + "_page_0")
-	}
 }

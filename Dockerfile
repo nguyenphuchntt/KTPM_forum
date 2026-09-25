@@ -1,8 +1,8 @@
 # Use official golang image with specific version
-FROM golang:1.24-alpine
+FROM golang:1.25-alpine
 
 # Install build dependencies
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 

@@ -1,17 +1,14 @@
 package post
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"forum/server/database"
 	"forum/server/model"
 	commentRepo "forum/server/repository/mysql/comment"
-	"forum/server/utils/retry"
 
 	"github.com/google/uuid"
 )
@@ -23,9 +20,6 @@ type PostDetail struct {
 
 func FetchPosts(db *sql.DB, currentPage int) ([]model.Post, int, error) {
 	var posts []model.Post
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	query := `SELECT
 		p.id,
@@ -45,10 +39,7 @@ func FetchPosts(db *sql.DB, currentPage int) ([]model.Post, int, error) {
 		p.created_at DESC
 	LIMIT 10 OFFSET ?`
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_posts", query, currentPage)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_posts", query, currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -101,9 +92,6 @@ func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[model.PostID]model.Post, er
 		return make(map[model.PostID]model.Post), nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	placeholders := make([]string, len(postIDs))
 	args := make([]interface{}, len(postIDs))
 	for i, id := range postIDs {
@@ -128,10 +116,7 @@ func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[model.PostID]model.Post, er
 	WHERE p.id IN (%s)
 	ORDER BY p.created_at DESC`, strings.Join(placeholders, ","))
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_posts_by_ids", query, args...)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_posts_by_ids", query, args...)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, err
@@ -180,19 +165,13 @@ func FetchPostsByIDs(db *sql.DB, postIDs []int) (map[model.PostID]model.Post, er
 }
 
 func FetchPostIDsByTimestamp(db *sql.DB, offset, limit int) ([]int, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	query := `
-		SELECT id, DATE_FORMAT(created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at
+		SELECT id, TO_CHAR(created_at, 'MM/DD/YYYY HH12:MI AM') AS formatted_created_at
 		FROM posts
 		ORDER BY created_at DESC, id DESC
 		LIMIT ? OFFSET ?`
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_post_ids_page", query, limit, offset)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_post_ids_page", query, limit, offset)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, "", err
@@ -228,9 +207,6 @@ func FetchPost(db *sql.DB, postID model.PostID) (PostDetail, int, error) {
 	var post model.Post
 	post.ID = postID
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	query := `SELECT
 		p.user_id,
 		a.username,
@@ -246,26 +222,22 @@ func FetchPost(db *sql.DB, postID model.PostID) (PostDetail, int, error) {
 		INNER JOIN accounts a ON a.id = p.user_id
 	WHERE p.id = ?`
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
 	var userID uuid.UUID
 	var mediaID sql.NullInt64
-	_, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Row, error) {
 
-		row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail", query, int64(postID))
+	row, recordError := database.QueryRowWithMetricsAndError(db, "select_post_detail", query, int64(postID))
 
-		err := row.Scan(
-			&userID,
-			&post.Username,
-			&post.Title,
-			&post.Content,
-			&mediaID,
-			&post.LikeCount,
-			&post.DislikeCount,
-			&post.CommentCount,
-			&post.CreatedAt)
-		recordError(err)
-		return row, err
-	})
+	err := row.Scan(
+		&userID,
+		&post.Username,
+		&post.Title,
+		&post.Content,
+		&mediaID,
+		&post.LikeCount,
+		&post.DislikeCount,
+		&post.CommentCount,
+		&post.CreatedAt)
+	recordError(err)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return PostDetail{}, 404, fmt.Errorf("post not found: %w", err)
@@ -293,9 +265,6 @@ func FetchPost(db *sql.DB, postID model.PostID) (PostDetail, int, error) {
 func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]model.Post, int, error) {
 	var posts []model.Post
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	query := `
 		SELECT
 			p.id,
@@ -316,10 +285,7 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]model.
 		ORDER BY
 			p.created_at DESC
 		LIMIT 10 OFFSET ?`
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_posts_by_category", query, categoryID, currentpage)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_posts_by_category", query, categoryID, currentpage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -365,21 +331,15 @@ func FetchPostsByCategory(db *sql.DB, categoryID int, currentpage int) ([]model.
 }
 
 func FetchPostIDsForCategoryPage(db *sql.DB, categoryID, offset, limit int) ([]int, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	query := `
-		SELECT p.id, DATE_FORMAT(p.created_at, '%m/%d/%Y %I:%M %p') AS formatted_created_at
+		SELECT p.id, TO_CHAR(p.created_at, 'MM/DD/YYYY HH12:MI AM') AS formatted_created_at
 		FROM posts p
 		INNER JOIN post_category pc ON p.id = pc.post_id
 		WHERE pc.category_id = ?
 		ORDER BY p.created_at DESC, p.id DESC
 		LIMIT ? OFFSET ?`
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_post_ids_category_page", query, categoryID, limit, offset)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_post_ids_category_page", query, categoryID, limit, offset)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, "", err
@@ -414,9 +374,6 @@ func FetchPostIDsForCategoryPage(db *sql.DB, categoryID, offset, limit int) ([]i
 func FetchCreatedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage int) ([]model.Post, int, error) {
 	var posts []model.Post
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	retryConfig := retry.DatabaseQueryRetryConfig()
 	query := `SELECT
 		p.id,
 		p.user_id,
@@ -435,9 +392,7 @@ func FetchCreatedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage in
 	ORDER BY
 		p.created_at DESC
 	LIMIT 10 OFFSET ?`
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_posts_by_user", query, uuid.UUID(user_id), currentPage)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_posts_by_user", query, uuid.UUID(user_id), currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -505,12 +460,7 @@ func FetchLikedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage int)
 	ORDER BY
 		p.created_at DESC
 	LIMIT 10 OFFSET ?`
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	rows, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.Rows, error) {
-		return database.QueryWithMetrics(db, "select_liked_posts", query, uuid.UUID(user_id), currentPage)
-	})
+	rows, err := database.QueryWithMetrics(db, "select_liked_posts", query, uuid.UUID(user_id), currentPage)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, 500, err
@@ -570,13 +520,11 @@ func StorePost(db *sql.DB, user_id model.AccountID, title, content string, media
 		mediaIDVal = nil
 	}
 
-	query := `INSERT INTO posts (user_id, title, content, media_id) VALUES (?,?,?,?)`
-	result, err := database.ExecWithMetricsTx(tx, "insert_post", query, uuid.UUID(user_id), title, content, mediaIDVal)
-	if err != nil {
-		return 0, fmt.Errorf("%v", err)
-	}
-	postID, err := result.LastInsertId()
-	if err != nil {
+	query := `INSERT INTO posts (user_id, title, content, media_id) VALUES (?,?,?,?) RETURNING id`
+	var postID int64
+	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "insert_post", query, uuid.UUID(user_id), title, content, mediaIDVal)
+	if err := row.Scan(&postID); err != nil {
+		recordError(err)
 		return 0, fmt.Errorf("%v", err)
 	}
 
@@ -594,12 +542,13 @@ func StorePostCategory(db *sql.DB, post_id int64, category_id int) (int64, error
 	}
 	defer tx.Rollback()
 
-	query := `INSERT INTO post_category (post_id, category_id) VALUES (?,?)`
-	result, err := database.ExecWithMetricsTx(tx, "insert_post_category", query, post_id, category_id)
-	if err != nil {
+	query := `INSERT INTO post_category (post_id, category_id) VALUES (?,?) RETURNING id`
+	var postcatID int64
+	row, recordError := database.QueryRowWithMetricsAndErrorTx(tx, "insert_post_category", query, post_id, category_id)
+	if err := row.Scan(&postcatID); err != nil {
+		recordError(err)
 		return 0, fmt.Errorf("error inserting post category: %v", err)
 	}
-	postcatID, _ := result.LastInsertId()
 
 	if err = tx.Commit(); err != nil {
 		return 0, fmt.Errorf("error committing transaction: %v", err)
@@ -725,9 +674,6 @@ func ReactToPost(db *sql.DB, user_id model.AccountID, post_id model.PostID, user
 }
 
 func DeletePost(db *sql.DB, user_id model.AccountID, post_id model.PostID) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	tx, err := db.Begin()
 	if err != nil {
 		return 500, fmt.Errorf("error starting transaction: %v", err)
@@ -751,10 +697,7 @@ func DeletePost(db *sql.DB, user_id model.AccountID, post_id model.PostID) (int,
 		return 403, fmt.Errorf("user is not authorized to delete this post")
 	}
 
-	retryConfig := retry.DatabaseQueryRetryConfig()
-	_, err = retry.TryWithResult(ctx, retryConfig, func() (sql.Result, error) {
-		return database.ExecWithMetricsTx(tx, "delete_post", "DELETE FROM posts WHERE id = ?", int64(post_id))
-	})
+	_, err = database.ExecWithMetricsTx(tx, "delete_post", "DELETE FROM posts WHERE id = ?", int64(post_id))
 	if err != nil {
 		return 500, fmt.Errorf("error deleting post: %v", err)
 	}

@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"forum/server/cache"
 	"forum/server/config"
 	"forum/server/dto/request"
 	"forum/server/dto/response"
 	userRepository "forum/server/repository/mysql/user"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -113,10 +113,6 @@ func (uc *AuthUsecase) Signin(req request.SigninRequest) (*response.SigninRespon
 		return nil, ErrSessionStorage
 	}
 
-	if cache.GlobalSessionCache != nil {
-		cache.GlobalSessionCache.Set(sessionID, credentials.UserID, username, expiresAt)
-	}
-
 	return &response.SigninResponse{
 		UserID:    credentials.UserID.String(),
 		Username:  username,
@@ -146,7 +142,7 @@ func (uc *AuthUsecase) Me(userID uuid.UUID) (*response.MeResponse, error) {
 	}, nil
 }
 
-// Logout drops the user's session row and evicts it from the session cache.
+// Logout drops the user's session row.
 // Signing out is idempotent: an already expired session is not an error.
 func (uc *AuthUsecase) Logout(userID uuid.UUID) error {
 	if userID == uuid.Nil {
@@ -155,10 +151,6 @@ func (uc *AuthUsecase) Logout(userID uuid.UUID) error {
 
 	if err := userRepository.DeleteUserSession(uc.db, userID); err != nil {
 		return ErrSessionDelete
-	}
-
-	if cache.GlobalSessionCache != nil {
-		cache.GlobalSessionCache.DeleteByUserID(userID)
 	}
 
 	return nil
@@ -224,14 +216,22 @@ func ClearSessionCookie() *http.Cookie {
 	}
 }
 
-// isDuplicateError reports whether err is MySQL's unique-key violation (1062).
+// isDuplicateError reports whether err is a unique-key violation.
 func isDuplicateError(err error) bool {
 	if err == nil {
 		return false
 	}
+
+	// PostgreSQL: check SQLSTATE 23505
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return true
+	}
+
+	// Fallback for wrapped / stringified errors (SQLSTATE check above wins).
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "error 1062") ||
-		strings.Contains(msg, "duplicate entry") ||
+	return strings.Contains(msg, "duplicate entry") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint") ||
 		strings.Contains(msg, "unique constraint") ||
 		strings.Contains(msg, "is not unique")
 }

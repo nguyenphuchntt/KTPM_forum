@@ -3,7 +3,6 @@ services:
     build: .
     ports:
       - "8080:8080"
-      - "9090:9090"
     deploy:
       resources:
         limits:
@@ -13,13 +12,14 @@ services:
           cpus: "2.0"
           memory: 1G
     environment:
-      - DB_DRIVER=mysql
-      - DB_SOURCE=user:password@tcp(db:3306)/forum_db?parseTime=true
+      - DB_DRIVER=postgres
+      - DB_SOURCE=postgres://user:password@db:5432/forum_db?sslmode=disable
       - DB_USER=user
       - DB_PASSWORD=password
       - DB_HOST=db
-      - DB_PORT=3306
+      - DB_PORT=5432
       - DB_NAME=forum_db
+      - DB_SSLMODE=disable
       - ENVIRONMENT=production
       - LOG_LEVEL=info
       - BASE_PATH=/app/
@@ -46,7 +46,7 @@ services:
     restart: on-failure
 
   db:
-    image: mysql:8.0
+    image: postgres:16-alpine
     deploy:
       resources:
         limits:
@@ -56,63 +56,19 @@ services:
           cpus: "1.0"
           memory: 2G
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: forum_db
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      POSTGRES_DB: forum_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
     ports:
-      - "3307:3306" # Map to host port 3307 instead
+      - "5433:5432" # Map to host port 5433 to avoid clashing with a local Postgres
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U user -d forum_db"]
       interval: 3s
       timeout: 2s
       retries: 10
       start_period: 5s
 
-  prometheus:
-    image: prom/prometheus:latest
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-        reservations:
-          cpus: "0.25"
-          memory: 128M
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-        reservations:
-          cpus: "0.25"
-          memory: 128M
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
 volumes:
   db_data:
-  prometheus_data:
-  grafana_data:

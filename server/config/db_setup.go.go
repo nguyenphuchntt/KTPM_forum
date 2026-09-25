@@ -1,42 +1,85 @@
 package config
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
 	"forum/server/database"
-	"forum/server/utils/retry"
 )
 
-// CreateTables executes all queries from the new migration schema
+// CreateTables executes all queries from the new migration schema.
+//
+// PostgreSQL's extended protocol (used by the pgx driver) rejects multiple
+// statements in a single Exec, so the file is split on ";" and each statement
+// runs in order. The schema has no semicolons inside string literals or
+// function bodies we care about beyond the plpgsql block, which we keep whole.
 func CreateTables(db *sql.DB) error {
-	ctx, cancelF := context.WithTimeout(context.Background(), 1 * time.Minute)
-	defer cancelF()
+	content, err := os.ReadFile(BasePath + "server/repository/mysql/migration/20260916094300_schema.sql")
+	if err != nil {
+		return fmt.Errorf("failed to read migration schema file: %v", err)
+	}
 
-	retryConfig := retry.DatabaseSetupConfig()
-	return retry.Try(ctx, retryConfig, func() error {
-		content, err := os.ReadFile(BasePath + "server/repository/mysql/migration/20260916094300_schema.sql")
-		if err != nil {
-			return fmt.Errorf("failed to read migration schema file: %v", err)
+	for _, statement := range splitSQLStatements(string(content)) {
+		if _, err = db.Exec(statement); err != nil {
+			return fmt.Errorf("failed to run schema statement %.80q: %v", statement, err)
 		}
-		queries := strings.TrimSpace(string(content))
-		_, err = db.Exec(queries)
+	}
 
-		if err != nil {
-			log.Printf("failed to create tables %q: %v\n", queries, err)
-			return err
+	log.Println("Database schema created successfully")
+	return nil
+}
+
+func splitSQLStatements(script string) []string {
+	var statements []string
+	var current strings.Builder
+	inDollarQuote := false
+
+	lines := strings.Split(script, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inDollarQuote && strings.HasPrefix(trimmed, "--") {
+			continue
 		}
-		log.Println("Database schema created successfully")
-		return nil
-	})
+
+		lineContent := line
+		if !inDollarQuote {
+			if idx := strings.Index(line, "--"); idx != -1 {
+				lineContent = line[:idx]
+			}
+		}
+
+		for i := 0; i < len(lineContent); i++ {
+			if i+1 < len(lineContent) && lineContent[i] == '$' && lineContent[i+1] == '$' {
+				inDollarQuote = !inDollarQuote
+				current.WriteString("$$")
+				i++
+				continue
+			}
+
+			if lineContent[i] == ';' && !inDollarQuote {
+				if stmt := strings.TrimSpace(current.String()); stmt != "" {
+					statements = append(statements, stmt)
+				}
+				current.Reset()
+				continue
+			}
+
+			current.WriteByte(lineContent[i])
+		}
+		current.WriteByte('\n')
+	}
+
+	if stmt := strings.TrimSpace(current.String()); stmt != "" {
+		statements = append(statements, stmt)
+	}
+
+	return statements
 }
 
 // CreateDemoData generates and inserts demo data using repository functions
@@ -47,28 +90,22 @@ func CreateDemoData(db *sql.DB) error {
 		return err
 	}
 
-	ctx, cancelF := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancelF()
-	retryConfig := retry.DatabaseSetupConfig()
-
-	return retry.Try(ctx, retryConfig, func() error {
-		return seedDemoData(db)
-	})
+	return seedDemoData(db)
 }
 
 // seedDemoData inserts minimal, self-consistent demo data against the new
 // schema. Accounts are inserted directly with bcrypt hashes (userRepo.StoreUser
 // cannot be imported because it pulls cache, which imports config). Categories
-// use INSERT IGNORE so rerunning --seed does not error on UNIQUE labels.
+// use ON CONFLICT DO NOTHING so rerunning --seed does not error on UNIQUE labels.
 // Idempotent: accounts are unique by username, and posts reference only the
 // users created here.
 func seedDemoData(db *sql.DB) error {
-	// Categories (INSERT IGNORE so rerunning --seed does not error on the
-	// UNIQUE label constraint).
+	// Categories (ON CONFLICT DO NOTHING so rerunning --seed does not error on
+	// the UNIQUE label constraint).
 	categoryLabels := []string{"General", "Go", "SQL", "DevOps"}
 	for _, label := range categoryLabels {
 		_, err := database.ExecWithMetrics(db, "seed_category",
-			`INSERT IGNORE INTO categories (label) VALUES (?)`, label)
+			`INSERT INTO categories (label) VALUES (?) ON CONFLICT (label) DO NOTHING`, label)
 		if err != nil {
 			return fmt.Errorf("seed category %q: %w", label, err)
 		}
@@ -80,7 +117,7 @@ func seedDemoData(db *sql.DB) error {
 		posts                     []string
 	}{
 		{"alice@example.com", "alice", "password1", []string{
-			"Welcome to the forum", "How Go templates compose with MySQL",
+			"Welcome to the forum", "How Go templates compose with PostgreSQL",
 		}},
 		{"bob@example.com", "bob", "password2", []string{
 			"Indexing notes for post lists",

@@ -1,16 +1,13 @@
 package auth
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"forum/server/cache"
 	"forum/server/database"
-	"forum/server/utils/retry"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -20,23 +17,16 @@ import (
 const SessionCookieName = "session_id"
 
 // StoreSession replaces the session row of an account. An account has at most
-// one session, so REPLACE keeps the UNIQUE(user_id) invariant.
+// one session, so the ON CONFLICT upsert keeps the UNIQUE(user_id) invariant.
 func StoreSession(db *sql.DB, userID uuid.UUID, sessionID string, expiresAt time.Time) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	query := `INSERT INTO sessions (user_id, session_id, expires_at) VALUES (?,?,?)
+		ON CONFLICT (user_id) DO UPDATE SET session_id = EXCLUDED.session_id, expires_at = EXCLUDED.expires_at`
 
-	retryConfig := retry.DatabaseWriteRetryConfig()
-
-	return retry.Try(ctx, retryConfig, func() error {
-		query := `REPLACE INTO sessions (user_id, session_id, expires_at) VALUES (?,?,?)`
-
-		_, err := database.ExecWithMetrics(db, "insert_session", query, userID, sessionID, expiresAt)
-		if err != nil {
-			return fmt.Errorf("%v", err)
-		}
-
-		return nil
-	})
+	_, err := database.ExecWithMetrics(db, "insert_session", query, userID, sessionID, expiresAt)
+	if err != nil {
+		return fmt.Errorf("%v", err)
+	}
+	return nil
 }
 
 // ValidSession resolves the session cookie of a request to an account. It is
@@ -47,15 +37,6 @@ func ValidSession(r *http.Request, db *sql.DB) (uuid.UUID, string, bool) {
 		return uuid.Nil, "", false
 	}
 
-	if cache.GlobalSessionCache != nil {
-		if entry, found := cache.GlobalSessionCache.Get(cookie.Value); found {
-			return entry.UserID, entry.Username, true
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	query := `
 			SELECT
 				s.user_id,
@@ -65,25 +46,18 @@ func ValidSession(r *http.Request, db *sql.DB) (uuid.UUID, string, bool) {
 			INNER JOIN accounts a ON s.user_id = a.id
 			WHERE s.session_id = ? AND s.expires_at > NOW()
 		`
-	retryConfig := retry.DatabaseQueryRetryConfig()
 
 	var (
 		userID     uuid.UUID
 		expiration time.Time
 		username   string
 	)
-	err = retry.Try(ctx, retryConfig, func() error {
-		row, recordError := database.QueryRowWithMetricsAndError(db, "select_session", query, cookie.Value)
-		err = row.Scan(&userID, &expiration, &username)
-		recordError(err)
-		return err
-	})
+
+	row, recordError := database.QueryRowWithMetricsAndError(db, "select_session", query, cookie.Value)
+	err = row.Scan(&userID, &expiration, &username)
+	recordError(err)
 	if err != nil {
 		return uuid.Nil, "", false
-	}
-
-	if cache.GlobalSessionCache != nil {
-		cache.GlobalSessionCache.Set(cookie.Value, userID, username, expiration)
 	}
 
 	return userID, username, true
@@ -92,14 +66,8 @@ func ValidSession(r *http.Request, db *sql.DB) (uuid.UUID, string, bool) {
 // DeleteUserSession removes the account's session, signing the user out
 // everywhere. Deleting nothing is not an error.
 func DeleteUserSession(db *sql.DB, userID uuid.UUID) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	retryConfig := retry.DatabaseWriteRetryConfig()
-	return retry.Try(ctx, retryConfig, func() error {
-		_, err := database.ExecWithMetrics(db, "delete_session", `DELETE FROM sessions WHERE user_id = ?;`, userID)
-		return err
-	})
+	_, err := database.ExecWithMetrics(db, "delete_session", `DELETE FROM sessions WHERE user_id = ?;`, userID)
+	return err
 }
 
 // Account is the account row needed by the auth usecase's Me endpoint.
