@@ -8,7 +8,7 @@ import (
 
 	"forum/server/database"
 	"forum/server/model"
-	commentRepo "forum/server/repository/mysql/comment"
+	commentRepo "forum/server/repository/postgresql/comment"
 
 	"github.com/google/uuid"
 )

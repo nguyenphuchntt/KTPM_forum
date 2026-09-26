@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 
 	"forum/server/model"
-	categoryRepository "forum/server/repository/mysql/category"
-	postRepository "forum/server/repository/mysql/post"
+	categoryRepository "forum/server/repository/postgresql/category"
+	postRepository "forum/server/repository/postgresql/post"
 )
 
 var (

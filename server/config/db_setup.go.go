@@ -20,7 +20,7 @@ import (
 // runs in order. The schema has no semicolons inside string literals or
 // function bodies we care about beyond the plpgsql block, which we keep whole.
 func CreateTables(db *sql.DB) error {
-	content, err := os.ReadFile(BasePath + "server/repository/mysql/migration/20260916094300_schema.sql")
+	content, err := os.ReadFile(BasePath + "server/repository/postgresql/migration/20260916094300_schema.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read migration schema file: %v", err)
 	}

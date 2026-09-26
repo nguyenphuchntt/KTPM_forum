@@ -71,6 +71,14 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		controllers.ReactToPost(w, r, db)
 	})
 
+	mux.HandleFunc("/post/addcommentREQ", func(w http.ResponseWriter, r *http.Request) {
+		commentC.CreateCommentSSR(w, r)
+	})
+
+	mux.HandleFunc("/post/commentreaction", func(w http.ResponseWriter, r *http.Request) {
+		commentC.ReactToCommentSSR(w, r)
+	})
+
 	// Delete post route
 	mux.HandleFunc("/post/delete/{id}", func(w http.ResponseWriter, r *http.Request) {
 		controllers.DeletePost(w, r, db)

@@ -8,7 +8,7 @@ import (
 
 	"forum/server/config"
 	"forum/server/logger"
-	userRepo "forum/server/repository/mysql/user"
+	userRepo "forum/server/repository/postgresql/user"
 	"forum/server/utils"
 
 	"golang.org/x/crypto/bcrypt"

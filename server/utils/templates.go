@@ -9,7 +9,7 @@ import (
 
 	"forum/server/config"
 	"forum/server/model"
-	categoryRepo "forum/server/repository/mysql/category"
+	categoryRepo "forum/server/repository/postgresql/category"
 )
 
 type GlobalData struct {

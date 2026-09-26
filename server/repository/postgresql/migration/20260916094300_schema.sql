@@ -14,7 +14,6 @@ DROP TYPE IF EXISTS reaction_enum;
 CREATE TYPE target_type_enum AS ENUM ('post', 'comment');
 CREATE TYPE reaction_enum AS ENUM ('like', 'dislike');
 
--- Keeps updated_at current on UPDATE; PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP.
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -63,7 +62,7 @@ CREATE TABLE sessions (
     session_id VARCHAR(255) UNIQUE NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL
 );
-CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+CREATE UNIQUE INDEX idx_sessions_user_id ON sessions (user_id);
 
 CREATE TABLE posts (
     id BIGSERIAL PRIMARY KEY,

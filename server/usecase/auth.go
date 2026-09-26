@@ -10,7 +10,7 @@ import (
 	"forum/server/config"
 	"forum/server/dto/request"
 	"forum/server/dto/response"
-	userRepository "forum/server/repository/mysql/user"
+	userRepository "forum/server/repository/postgresql/user"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,7 +21,6 @@ const SessionTTL = 10 * time.Hour
 const SessionCookieName = "session_id"
 
 var (
-
 	ErrInvalidCredentials = NewAppError(http.StatusUnauthorized, CodeUnauthorized, "invalid username or password")
 
 	ErrNoSession         = NewAppError(http.StatusUnauthorized, CodeUnauthorized, "authentication required")

@@ -27,7 +27,7 @@ Tài liệu này mô tả **cách một HTTP request đi qua codebase thực t�
 | **routes** | `server/routes/routes.go` | đăng ký toàn bộ pattern → handler | chỉ map URL → handler |
 | **controller** | `server/controller/` | bind / validate / gọi usecase (API) hoặc gọi repo trực tiếp (SSR) / ghi response | HTTP concern, không SQL nghiệp vụ |
 | **usecase** | `server/usecase/` | nghiệp vụ, authorization, ranh giới transaction | không đụng `http.ResponseWriter` |
-| **repository** | `server/repository/mysql/` | toàn bộ SQL, `rows.Scan`, map row → domain | dùng `database.*WithMetrics` |
+| **repository** | `server/repository/postgresql/` | toàn bộ SQL, `rows.Scan`, map row → domain | dùng `database.*WithMetrics` |
 | **domain** | `server/model/` | struct thuần + typed ID | không import `net/http`, không SQL |
 
 Quy tắc phụ thuộc (một chiều): `controller → usecase → repository → database/sql`. Không bao giờ ngược lại.
@@ -198,7 +198,7 @@ Mỗi `Register*Routes` nhận `(mux, controllerValue)` — controller là struc
      ├─ postRepository.ReactToPost(db, AccountID, PostID, reaction)
      ├─ invalidatePostListCaches(nil)       ← xoá cache list
      └─ invalidatePostCache(postID)         ← xoá "post_<id>"
-6. post.ReactToPost                         (repository/mysql/post/post.go)
+6. post.ReactToPost                         (repository/postgresql/post/post.go)
      ├─ tx := db.Begin()  (defer tx.Rollback())
      ├─ SELECT reaction FROM likes WHERE user_id=? AND target_type='post' AND target_id=?
      ├─ nhánh: INSERT / DELETE / UPDATE bảng likes  → tính likeDelta/dislikeDelta
@@ -405,10 +405,10 @@ server/usecase/auth.go                      signin/signup/session/logout + cooki
 server/usecase/post.go                      nghiệp vụ post, cache invalidation, transaction intent
 server/usecase/comment.go                   nghiệp vụ comment
 server/usecase/errors.go                    AppError + ToHTTP (map lỗi → HTTP)
-server/repository/mysql/post/post.go        SQL post (đọc posts, ghi likes + delta count trong tx)
-server/repository/mysql/comment/comment.go  SQL comment (+ tăng posts.comment_count trong tx)
-server/repository/mysql/user/user.go        SQL account/session (package `auth`)
-server/repository/mysql/category/category.go SQL category (+ cache)
+server/repository/postgresql/post/post.go        SQL post (đọc posts, ghi likes + delta count trong tx)
+server/repository/postgresql/comment/comment.go  SQL comment (+ tăng posts.comment_count trong tx)
+server/repository/postgresql/user/user.go        SQL account/session (package `auth`)
+server/repository/postgresql/category/category.go SQL category (+ cache)
 server/model/post.go                        domain Post + getter cho template
 server/utils/templates.go                   RenderTemplate / GlobalData / RenderError
 server/dto/{request,response}/              struct vận chuyển

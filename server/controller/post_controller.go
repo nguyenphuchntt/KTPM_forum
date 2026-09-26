@@ -12,9 +12,9 @@ import (
 	"forum/server/config"
 	"forum/server/logger"
 	"forum/server/model"
-	categoryRepo "forum/server/repository/mysql/category"
-	postRepo "forum/server/repository/mysql/post"
-	userRepo "forum/server/repository/mysql/user"
+	categoryRepo "forum/server/repository/postgresql/category"
+	postRepo "forum/server/repository/postgresql/post"
+	userRepo "forum/server/repository/postgresql/user"
 	"forum/server/utils"
 )
 
@@ -207,7 +207,7 @@ func GetPostCreationForm(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	if err := utils.RenderTemplate(db, w, r, "createpost", http.StatusOK, nil, valid, username); err != nil {
+	if err := utils.RenderTemplate(db, w, r, "post-form", http.StatusOK, nil, valid, username); err != nil {
 		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"forum/server/cloud"
-	userRepo "forum/server/repository/mysql/user"
+	userRepo "forum/server/repository/postgresql/user"
 )
 
 // UploadGatekeeper - Gatekeeper Pattern implementation

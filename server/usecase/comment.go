@@ -10,7 +10,7 @@ import (
 
 	"forum/server/dto/request"
 	"forum/server/dto/response"
-	commentRepository "forum/server/repository/mysql/comment"
+	commentRepository "forum/server/repository/postgresql/comment"
 )
 
 var (

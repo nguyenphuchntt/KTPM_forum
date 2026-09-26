@@ -11,7 +11,7 @@ import (
 
 	"forum/server/config"
 	"forum/server/middleware/ratelimit"
-	userRepo "forum/server/repository/mysql/user"
+	userRepo "forum/server/repository/postgresql/user"
 )
 
 // RateLimitMiddleware manages rate limiting for the application

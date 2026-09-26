@@ -63,7 +63,7 @@ routes that are in the codebase vs PROPOSED routes that are planned.
 
 ### Schema status
 
-The sole active scheme is in `server/repository/mysql/migration/20260916094300_schema.sql`:
+The sole active scheme is in `server/repository/postgresql/migration/20260916094300_schema.sql`:
 - `accounts` (CHAR(36) UUID primary key) replaces `users`
 - `likes` table with `target_type ENUM('post','comment')` replaces `post_reactions`/`comment_reactions`
 - `medias` table for images (FK from `posts.media_id`)
@@ -120,7 +120,7 @@ happens in `server/usecase/errors.go` (`CodeValidationError`, `CodeUnauthorized`
 `*AppError` gets its own status — everything else becomes a generic 500, so unexpected errors never
 leak SQL detail.
 
-Note the package-name/import-alias mismatch: `server/repository/mysql/user/` declares
+Note the package-name/import-alias mismatch: `server/repository/postgresql/user/` declares
 `package auth` and is imported as `userRepository`. Don't "fix" it blindly; grep callers first.
 
 ### Delivery: hybrid SSR + JSON (current)

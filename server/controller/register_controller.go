@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	userRepo "forum/server/repository/mysql/user"
+	userRepo "forum/server/repository/postgresql/user"
 	"forum/server/utils"
 )
 

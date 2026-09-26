@@ -26,7 +26,7 @@ Tài liệu hướng dẫn chi tiết từng bước tích hợp tính năng tì
 ## 2. Ke Hoach Chi Tiet Cac Buoc Trien Khai
 
 ### Buoc 1: Database Migration (PostgreSQL Schema)
-Tạo file migration mới `server/repository/mysql/migration/20260926100000_add_fts_to_posts.sql`:
+Tạo file migration mới `server/repository/postgresql/migration/20260926100000_add_fts_to_posts.sql`:
 
 1. **Kích hoạt Extension `unaccent` (Hỗ trợ tìm kiếm tiếng Việt không dấu):**
    ```sql
@@ -51,7 +51,7 @@ Tạo file migration mới `server/repository/mysql/migration/20260926100000_add
 
 ---
 
-### Buoc 2: Implement Repository Layer (`server/repository/mysql/post/post.go`)
+### Buoc 2: Implement Repository Layer (`server/repository/postgresql/post/post.go`)
 Bổ sung method `SearchPosts` trong Repository để gọi SQL FTS của PostgreSQL:
 
 ```sql
