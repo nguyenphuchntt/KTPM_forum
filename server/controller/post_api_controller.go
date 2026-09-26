@@ -128,6 +128,13 @@ func (c PostController) CreatePostJSON(w http.ResponseWriter, r *http.Request) {
 		Categories: catStrings,
 	}
 
+	// The post usecase re-checks ownership, so an id the caller does not own is
+	// rejected there rather than trusted here.
+	if req.MediaID != nil {
+		mediaID := model.MediaID(*req.MediaID)
+		input.MediaID = &mediaID
+	}
+
 	res, err := c.Post.CreatePost(input)
 	if err != nil {
 		writeAppError(w, err)

@@ -4,13 +4,16 @@ import (
 	"database/sql"
 	"net/http"
 
+	"forum/server/cloud"
 	"forum/server/config"
 	"forum/server/controller"
 	"forum/server/middleware"
 	"forum/server/usecase"
 )
 
-func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookController *controllers.WebhookController) http.Handler {
+// Routes builds the mux. storage is nil when object storage is not configured,
+// in which case the upload and media routes are left unregistered.
+func Routes(db *sql.DB, storageConfig *config.MinIOConfig, storage cloud.Storage) http.Handler {
 	mux := http.NewServeMux()
 
 	// Layered (JSON API v1) dependencies and routes.
@@ -110,19 +113,22 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		controllers.GetRegisterPage(w, r, db)
 	})
 
-	// API routes for image upload (if gatekeeper available)
-	if uploadGatekeeper != nil {
-		// Request SAS token to upload to quarantine
-		mux.Handle("/api/upload/request-url", endpointLimiter.LimitUpload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			uploadGatekeeper.GenerateUploadURL(w, r)
-		}), db))
-	}
+	// Image upload (valet key). Both endpoints are absent when object storage is
+	// not configured, so the app degrades instead of failing requests later.
+	if storage != nil {
+		uploadUc := usecase.NewUploadUsecase(db, storage, storageConfig, authUc)
+		uploadC := controllers.NewUploadController(uploadUc)
+		mediaC := controllers.NewMediaController(uploadUc)
 
-	// Webhook for Event Grid
-	if webhookController != nil {
-		mux.HandleFunc("/api/webhook/blob-created", func(w http.ResponseWriter, r *http.Request) {
-			webhookController.HandleBlobCreated(w, r)
-		})
+		// One upload costs two requests here (ticket + confirm), which is why
+		// the shared bucket is sized for twice the intended uploads per minute.
+		mux.Handle("/api/upload/request-url",
+			endpointLimiter.LimitUpload(http.HandlerFunc(uploadC.RequestUploadURLJSON), db))
+		mux.Handle("/api/upload/confirm",
+			endpointLimiter.LimitUpload(http.HandlerFunc(uploadC.ConfirmUploadJSON), db))
+
+		// This is the route model.Post.ImagePath has always pointed <img src> at.
+		controllers.RegisterMediaRoutes(mux, mediaC)
 	}
 
 	return mux

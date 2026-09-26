@@ -1,19 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"forum/server/cloud"
 	"forum/server/config"
-	"forum/server/controller"
 	"forum/server/logger"
 	"forum/server/middleware"
 	"forum/server/routes"
 	"forum/server/utils"
-	"forum/server/workers"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
@@ -61,32 +60,34 @@ func main() {
 
 
 
-	// Initialize Azure Storage (for image uploads)
-	connectionString := os.Getenv("AZURE_STORAGE_CONNECTION_STRING")
-	var uploadGatekeeper *middleware.UploadGatekeeper
-	var webhookController *controllers.WebhookController
+	// Initialize MinIO object storage for image uploads. Without an endpoint the
+	// app still runs, with the upload routes simply not registered.
+	storageConfig := config.LoadMinIOConfigFromEnv()
+	var objectStorage cloud.Storage
 
-	if connectionString != "" {
-		azureStorage, err := cloud.NewAzureStorage(connectionString)
+	if storageConfig.Enabled() {
+		minioStorage, err := cloud.NewMinIOStorage(storageConfig)
 		if err != nil {
-			log.Printf("Warning: Failed to initialize Azure Storage: %v", err)
-			log.Println("Image upload will not be available")
-		} else {
-			log.Printf("✓ Azure Storage connected: %s", azureStorage.GetAccountName())
-
-			// Auto-configure CORS and Public Access
-			cloud.ConfigureAzureStorage(connectionString, os.Getenv("AZURE_PRODUCTION_CONTAINER"))
-
-			uploadGatekeeper = middleware.NewUploadGatekeeper(azureStorage, db)
-			webhookController = controllers.NewWebhookController(azureStorage)
+			logger.Log.Fatal().Err(err).Msg("Invalid MinIO configuration")
 		}
-	} else {
-		log.Println("Warning: AZURE_STORAGE_CONNECTION_STRING not set, image upload disabled")
-	}
 
-	// Start Quarantine Watcher (for local dev automation)
-	if os.Getenv("ENABLE_QUARANTINE_WATCHER") == "true" && connectionString != "" {
-		workers.StartQuarantineWatcher(connectionString)
+		// Fail fast, but not immediately: AIStor validates its license before it
+		// starts listening, and docker compose only guarantees the container
+		// started. A configured-but-unreachable storage would otherwise only show
+		// up later as a broken upload.
+		if err := minioStorage.EnsureBucketsWithRetry(context.Background(), 30, time.Second); err != nil {
+			logger.Log.Fatal().Err(err).Msg("MinIO is not usable")
+		}
+
+		objectStorage = minioStorage
+		logger.Log.Info().
+			Str("endpoint", storageConfig.Endpoint).
+			Str("public_endpoint", storageConfig.PublicEndpoint).
+			Str("quarantine_bucket", storageConfig.QuarantineBucket).
+			Str("media_bucket", storageConfig.MediaBucket).
+			Msg("Object storage ready")
+	} else {
+		logger.Log.Warn().Msg("MINIO_ENDPOINT is not set, image upload is disabled")
 	}
 
 	// Initialize rate limit config
@@ -96,7 +97,7 @@ func main() {
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(db, rateLimitConfig)
 
 	// Start the HTTP server with rate limiting
-	handler := rateLimitMiddleware.Limit(routes.Routes(db, uploadGatekeeper, webhookController))
+	handler := rateLimitMiddleware.Limit(routes.Routes(db, storageConfig, objectStorage))
 
 	server := http.Server{
 		Addr:    ":8080",

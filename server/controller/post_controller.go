@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"forum/server/config"
 	"forum/server/logger"
 	"forum/server/model"
 	categoryRepo "forum/server/repository/postgresql/category"
+	mediaRepo "forum/server/repository/postgresql/media"
 	postRepo "forum/server/repository/postgresql/post"
 	userRepo "forum/server/repository/postgresql/user"
 	"forum/server/utils"
@@ -277,30 +277,27 @@ func CreatePost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	var imagePath string
-	imageUrl := r.FormValue("image_url")
-	if imageUrl != "" {
-		imagePath = imageUrl
-	} else {
-		file, header, err := r.FormFile("image")
-		if err == nil {
-			defer file.Close()
-			storage := utils.NewLocalStorage(config.BasePath + "web/assets/uploads")
-			imagePath, err = storage.Save(file, header)
-			if err != nil {
-				log.Error().Err(err).Msg("Error saving image")
-				w.WriteHeader(500)
-				return
-			}
-		} else if err != http.ErrMissingFile {
-			log.Error().Err(err).Msg("Error retrieving image")
+	// The image, if any, was uploaded and validated before the form was
+	// submitted; all that arrives here is the media id to attach. The query
+	// filters on the owner, so another account's id simply matches nothing.
+	var mediaID *model.MediaID
+	if rawMediaID := r.FormValue("media_id"); rawMediaID != "" {
+		id, err := strconv.ParseInt(rawMediaID, 10, 64)
+		if err != nil || id <= 0 {
+			log.Warn().Str("media_id", rawMediaID).Msg("Invalid media ID format")
 			w.WriteHeader(400)
 			return
 		}
+		if _, err := mediaRepo.LoadMediaForOwner(db, model.MediaID(id), userID); err != nil {
+			log.Warn().Int64("media_id", id).Msg("Media does not exist or is not owned by this user")
+			w.WriteHeader(400)
+			return
+		}
+		media := model.MediaID(id)
+		mediaID = &media
 	}
-	_ = imagePath
 
-	pid, err := postRepo.StorePost(db, model.AccountID(userID), title, content, nil)
+	pid, err := postRepo.StorePost(db, model.AccountID(userID), title, content, mediaID)
 	if err != nil {
 		log.Error().Err(err).Msg("Error storing post")
 		w.WriteHeader(400)

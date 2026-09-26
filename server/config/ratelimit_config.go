@@ -51,7 +51,9 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 50),
 		CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 100),
 
-		UploadRequestsPerMinute:   getEnvInt("UPLOAD_REQUESTS_PER_MINUTE", 5),
+		// One upload spends two requests: the pre-signed ticket and the confirm,
+		// so this allows 5 uploads per minute per user.
+		UploadRequestsPerMinute:   getEnvInt("UPLOAD_REQUESTS_PER_MINUTE", 10),
 	}
 }
 

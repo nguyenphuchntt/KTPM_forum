@@ -1,6 +1,10 @@
 # Ignore the database file if it exists
 server/database/database.db
 
+# The AIStor license is a credential. It is bind-mounted into the minio service
+# at run time; without this line `COPY . .` would bake it into the app image.
+minio.license
+
 # Ignore version control system directories
 .git
 .gitignore

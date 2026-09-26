@@ -44,6 +44,9 @@ CREATE TABLE categories (
 
 CREATE TABLE medias (
     id BIGSERIAL PRIMARY KEY,
+    -- Uploader. LoadMediaForOwner filters on this so one account cannot attach
+    -- another account's image to its own post.
+    user_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     object_key TEXT NOT NULL,
     public_url TEXT NOT NULL,
     mime_type VARCHAR(255) NOT NULL,
@@ -51,6 +54,8 @@ CREATE TABLE medias (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_medias_user_id ON medias (user_id);
 
 CREATE TRIGGER trg_medias_updated_at
     BEFORE UPDATE ON medias

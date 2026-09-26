@@ -6,3 +6,7 @@ k6-tests/
 cmd/.env
 .env
 generate.py
+
+# AIStor license: a credential tied to an account, bind-mounted by docker compose.
+# Delete this line if you deliberately want the license versioned.
+minio.license

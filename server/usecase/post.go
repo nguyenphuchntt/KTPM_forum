@@ -12,6 +12,7 @@ import (
 
 	"forum/server/model"
 	categoryRepository "forum/server/repository/postgresql/category"
+	mediaRepository "forum/server/repository/postgresql/media"
 	postRepository "forum/server/repository/postgresql/post"
 )
 
@@ -21,6 +22,7 @@ var (
 	ErrPostInvalidID    = errors.New("invalid post id")
 	ErrPostInvalidData  = errors.New("title, content, and categories are required")
 	ErrCategoryInvalid  = errors.New("one or more categories are invalid")
+	ErrPostMediaInvalid = NewAppError(http.StatusBadRequest, CodeValidationError, "image does not exist or does not belong to you")
 )
 
 type PostUsecase struct {
@@ -37,7 +39,9 @@ type CreatePostInput struct {
 	Title      string
 	Content    string
 	Categories []string
-	ImageURL   string
+	// MediaID is the image uploaded for this post, already validated by
+	// UploadUsecase.ConfirmUpload. Nil means the post has no image.
+	MediaID *model.MediaID
 }
 
 type CreatePostResult struct {
@@ -49,7 +53,8 @@ type CreatePostResult struct {
 }
 
 // CreatePost validates post data, stores the post and its categories, and invalidates list caches.
-// Local file persistence remains a controller/storage concern; ImageURL is the already-uploaded URL.
+// The image was uploaded separately through the valet-key flow; all that is left
+// is to check the caller really owns that media row.
 func (uc *PostUsecase) CreatePost(input CreatePostInput) (*CreatePostResult, error) {
 	if input.Request == nil || uc.auth == nil {
 		return nil, ErrPostUnauthorized
@@ -77,7 +82,21 @@ func (uc *PostUsecase) CreatePost(input CreatePostInput) (*CreatePostResult, err
 		return nil, ErrCategoryInvalid
 	}
 
-	postID, err := postRepository.StorePost(uc.db, model.AccountID(session.UserID), title, content, nil)
+	imagePath := ""
+	if input.MediaID != nil {
+		// LoadMediaForOwner also rejects another account's media, so a caller
+		// cannot attach an image it did not upload.
+		media, err := mediaRepository.LoadMediaForOwner(uc.db, *input.MediaID, session.UserID)
+		if err != nil {
+			if errors.Is(err, mediaRepository.ErrMediaNotFound) {
+				return nil, ErrPostMediaInvalid
+			}
+			return nil, err
+		}
+		imagePath = media.PublicURL
+	}
+
+	postID, err := postRepository.StorePost(uc.db, model.AccountID(session.UserID), title, content, input.MediaID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +109,7 @@ func (uc *PostUsecase) CreatePost(input CreatePostInput) (*CreatePostResult, err
 		Title:      title,
 		Content:    content,
 		Categories: categoryIDs,
-		ImagePath:  input.ImageURL,
+		ImagePath:  imagePath,
 	}, nil
 }
 

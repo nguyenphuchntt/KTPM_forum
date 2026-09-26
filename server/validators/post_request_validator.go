@@ -192,6 +192,9 @@ func ValidateCreatePostRequest(req request.CreatePostRequest) map[string]string 
 	if len(req.Categories) == 0 {
 		details["categories"] = "at least one category is required"
 	}
+	if req.MediaID != nil && *req.MediaID <= 0 {
+		details["media_id"] = "media_id must be a positive integer"
+	}
 	if len(details) > 0 {
 		return details
 	}

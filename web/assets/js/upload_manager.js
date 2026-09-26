@@ -24,24 +24,27 @@ class UploadManager {
             this.updateProgress(10, 'Đang kiểm tra file...');
             await this.pipeline.execute(file);
 
-            // Phase 2: Request SAS token from Gatekeeper
+            // Phase 2: Ask the server for a pre-signed PUT to the quarantine bucket
             this.updateProgress(30, 'Đang yêu cầu quyền upload...');
-            const sasData = await this.requestSASToken(file);
+            const ticket = await this.requestUploadURL(file);
 
-            // Phase 3: Direct upload to Azure quarantine
+            // Phase 3: Upload straight to object storage
             this.updateProgress(50, 'Đang upload lên cloud...');
-            await this.uploadToAzure(file, sasData.upload_url);
+            await this.uploadToStorage(file, ticket.upload_url);
 
-            // Phase 4: Notify server and get public URL
-            this.updateProgress(90, 'Đang hoàn tất...');
-            const imageURL = sasData.public_url;
+            // Phase 4: Let the server validate and publish the object. This is
+            // synchronous, so once it answers the image is already live — there
+            // is nothing left for the client to wait for.
+            this.updateProgress(90, 'Đang xác thực ảnh...');
+            const media = await this.confirmUpload(ticket.object_key);
 
             this.updateProgress(100, 'Upload thành công!');
 
             return {
                 success: true,
-                imageURL: imageURL,
-                objectKey: sasData.object_key
+                mediaId: media.media_id,
+                imageURL: media.public_url,
+                objectKey: ticket.object_key
             };
 
         } catch (error) {
@@ -50,7 +53,7 @@ class UploadManager {
         }
     }
 
-    async requestSASToken(file) {
+    async requestUploadURL(file) {
         const response = await fetch('/api/upload/request-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -62,38 +65,66 @@ class UploadManager {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Không thể lấy quyền upload');
+            const error = await response.json().catch(() => ({}));
+            throw new Error(this.errorMessage(response, error, 'Không thể lấy quyền upload'));
         }
 
         return response.json();
+    }
+
+    async confirmUpload(objectKey) {
+        const response = await fetch('/api/upload/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ object_key: objectKey })
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(this.errorMessage(response, error, 'Ảnh không hợp lệ'));
+        }
+
+        return response.json();
+    }
+
+    // Errors normally come back in the shared envelope
+    // {"error": {code, message, details}}, but the endpoint rate limiter answers
+    // 429 with an empty body, so the status is the fallback signal.
+    errorMessage(response, body, fallback) {
+        if (body?.error?.message) {
+            return body.error.message;
+        }
+        if (response.status === 429) {
+            return 'Bạn thao tác quá nhanh, vui lòng thử lại sau.';
+        }
+        return fallback;
     }
 
     sleep(time) {
         return new Promise(resolve => setTimeout(resolve, time));
     }
 
-    async uploadToAzure(file, sasURL) {
+    // The pre-signed URL already carries the signature in its query string, so
+    // the request must not add authentication headers of its own.
+    async uploadToStorage(file, uploadURL) {
         let lastError;
         for (let i = 0; i < maxAttempts; i++) {
             try {
-                console.log("trying attempt ", i);
-                const response = await fetch(sasURL, {
+                const response = await fetch(uploadURL, {
                     method: 'PUT',
                     headers: {
-                        'x-ms-blob-type': 'BlockBlob',
                         'Content-Type': file.type
                     },
                     body: file
-                });          
+                });
                 if (response.ok) {
                     return;
                 } else {
                     throw new Error(`Failed to upload ${response.status}`);
-                }                
+                }
             } catch (error) {
                 lastError = error;
-                if (i < maxAttempts) {
+                if (i < maxAttempts - 1) {
                     await this.sleep(1000);
                 }
             }

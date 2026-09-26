@@ -23,9 +23,20 @@ services:
       - ENVIRONMENT=production
       - LOG_LEVEL=info
       - BASE_PATH=/app/
-      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
-      - AZURE_QUARANTINE_CONTAINER=${AZURE_QUARANTINE_CONTAINER:-quarantine-container}
-      - AZURE_PRODUCTION_CONTAINER=${AZURE_PRODUCTION_CONTAINER:-post-images}
+      # Object storage. MINIO_ENDPOINT is what the app dials, MINIO_PUBLIC_ENDPOINT
+      # is what the browser dials: pre-signed URLs are signed over the Host, so
+      # they must be signed against the address the browser will actually use.
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+      # Must be non-empty: without it the SDK resolves a bucket's region with a
+      # request against the client's own endpoint, and the presign client is
+      # pointed at localhost:9000, which inside this container is the app itself.
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_QUARANTINE_BUCKET=${MINIO_QUARANTINE_BUCKET:-forum-quarantine}
+      - MINIO_MEDIA_BUCKET=${MINIO_MEDIA_BUCKET:-forum-media}
       - GLOBAL_RPS=${GLOBAL_RPS}
       - GLOBAL_BURST=${GLOBAL_BURST}
       - USER_RPM=${USER_RPM}
@@ -38,12 +49,51 @@ services:
       - COMMENTS_PER_HOUR=${COMMENTS_PER_HOUR}
       - REACTIONS_PER_MINUTE=${REACTIONS_PER_MINUTE}
       - UPLOAD_REQUESTS_PER_MINUTE=${UPLOAD_REQUESTS_PER_MINUTE}
-      - ENABLE_QUARANTINE_WATCHER=true
       - GOMAXPROCS=4
     depends_on:
       db:
         condition: service_healthy
+      # Deliberately service_started, not service_healthy: AIStor has to validate
+      # its license before it listens, and the healthcheck depends on an `mc`
+      # binary the image may not ship. main.go retries EnsureBuckets instead, so
+      # a slow or unhealthy-looking storage server does not block startup.
+      minio:
+        condition: service_started
     restart: on-failure
+
+  minio:
+    # AIStor, not the community image: the community server is no longer free for
+    # this use. AIStor refuses to start without a license, which is mounted
+    # read-only from the repository root below.
+    image: quay.io/minio/aistor/minio:latest
+    command: server /mnt/data --license /minio.license
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # The browser PUTs straight to :9000 from the app's origin, so MinIO has to
+      # answer the preflight itself.
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ORIGIN:-http://localhost:8080}
+    ports:
+      - "9000:9000" # S3 API (presigned PUTs and public object reads)
+      - "9001:9001" # web console
+    volumes:
+      # A fresh volume name on purpose: `minio_data` holds the community server's
+      # on-disk format from an earlier run, and AIStor should initialize its own
+      # instead of inheriting it. The old volume is dead weight — its `medias`
+      # rows are wiped on every restart anyway — so `docker volume rm` it.
+      - aistor_data:/mnt/data
+      # The license is a credential: keep it out of the image (see .dockerignore)
+      # and out of git (see .gitignore), and mount it at run time.
+      - ./minio.license:/minio.license:ro
+    healthcheck:
+      # `mc` may or may not be shipped by the AIStor image; if it is not, this
+      # healthcheck simply never turns healthy, which is why `app` waits only for
+      # the container to start and then retries EnsureBuckets itself.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 
   db:
     image: postgres:16-alpine
@@ -72,3 +122,4 @@ services:
 
 volumes:
   db_data:
+  aistor_data:
