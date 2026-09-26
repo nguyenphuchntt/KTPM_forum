@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"forum/server/config"
+	"forum/server/dto/response"
 	"forum/server/middleware/ratelimit"
 	userRepo "forum/server/repository/postgresql/user"
 )
@@ -172,6 +173,7 @@ type EndpointRateLimiter struct {
 	postLimiter     *ratelimit.WindowRateLimiter
 	commentLimiter  *ratelimit.WindowRateLimiter
 	uploadLimiter   *ratelimit.WindowRateLimiter
+	searchLimiter   *ratelimit.WindowRateLimiter
 	config          *config.RateLimitConfig
 	db              *sql.DB
 }
@@ -197,6 +199,9 @@ func NewEndpointRateLimiter(db *sql.DB, cfg *config.RateLimitConfig) *EndpointRa
 
 		// Upload: configurable uploads per minute
 		uploadLimiter: ratelimit.NewWindowRateLimiter(cfg.UploadRequestsPerMinute, 1*time.Minute),
+
+		// Search: configurable searches per minute
+		searchLimiter: ratelimit.NewWindowRateLimiter(cfg.SearchRequestsPerMinute, 1*time.Minute),
 
 		config: cfg,
 		db:     db,
@@ -331,6 +336,36 @@ func (e *EndpointRateLimiter) LimitUpload(next http.Handler, db *sql.DB) http.Ha
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LimitSearch rate limits the search endpoint, which the navbar suggestion
+// dropdown calls while the user types. Keyed by session when there is one and by
+// IP otherwise. Unlike LimitUpload this answers with the shared JSON error
+// envelope, because the only caller is the JSON API.
+func (e *EndpointRateLimiter) LimitSearch(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var key string
+		userID, _, valid := userRepo.ValidSession(r, db)
+		if valid {
+			key = fmt.Sprintf("search:user:%s", userID)
+		} else {
+			key = "search:ip:" + getClientIP(r)
+		}
+
+		if !e.searchLimiter.Allow(key) {
+			log.Printf("[RATE_LIMIT] Type=search | Key=%s | Limit=%d/min",
+				key, e.config.SearchRequestsPerMinute)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(response.NewError(response.CodeRateLimit,
+				"Bạn tìm kiếm quá nhanh. Vui lòng thử lại sau.", nil))
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 // Helper function to get client IP

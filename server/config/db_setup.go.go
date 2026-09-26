@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,26 +14,59 @@ import (
 	"forum/server/database"
 )
 
-// CreateTables executes all queries from the new migration schema.
+// migrationDir holds every migration, run in filename order. The names are
+// timestamp-prefixed, so lexicographic order is chronological order: the schema
+// file drops and recreates every table, and the FTS migration that follows
+// alters the posts table it just created.
+const migrationDir = "server/repository/postgresql/migration/"
+
+// CreateTables executes every migration in the migration directory.
 //
 // PostgreSQL's extended protocol (used by the pgx driver) rejects multiple
-// statements in a single Exec, so the file is split on ";" and each statement
-// runs in order. The schema has no semicolons inside string literals or
+// statements in a single Exec, so each file is split on ";" and each statement
+// runs in order. The migrations have no semicolons inside string literals or
 // function bodies we care about beyond the plpgsql block, which we keep whole.
 func CreateTables(db *sql.DB) error {
-	content, err := os.ReadFile(BasePath + "server/repository/postgresql/migration/20260916094300_schema.sql")
+	names, err := migrationFiles()
 	if err != nil {
-		return fmt.Errorf("failed to read migration schema file: %v", err)
+		return err
 	}
 
-	for _, statement := range splitSQLStatements(string(content)) {
-		if _, err = db.Exec(statement); err != nil {
-			return fmt.Errorf("failed to run schema statement %.80q: %v", statement, err)
+	for _, name := range names {
+		content, err := os.ReadFile(BasePath + migrationDir + name)
+		if err != nil {
+			return fmt.Errorf("failed to read migration %s: %v", name, err)
+		}
+
+		for _, statement := range splitSQLStatements(string(content)) {
+			if _, err = db.Exec(statement); err != nil {
+				return fmt.Errorf("migration %s: failed to run statement %.80q: %v", name, statement, err)
+			}
 		}
 	}
 
 	log.Println("Database schema created successfully")
 	return nil
+}
+
+// migrationFiles returns the *.sql files in the migration directory, sorted so
+// they run oldest first.
+func migrationFiles() ([]string, error) {
+	entries, err := os.ReadDir(BasePath + migrationDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read migration directory: %v", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+
+	return names, nil
 }
 
 func splitSQLStatements(script string) []string {

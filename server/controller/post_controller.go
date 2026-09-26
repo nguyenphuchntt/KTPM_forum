@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"forum/server/logger"
 	"forum/server/model"
@@ -15,6 +16,7 @@ import (
 	mediaRepo "forum/server/repository/postgresql/media"
 	postRepo "forum/server/repository/postgresql/post"
 	userRepo "forum/server/repository/postgresql/user"
+	"forum/server/usecase"
 	"forum/server/utils"
 )
 
@@ -153,6 +155,105 @@ func IndexPostsByCategory(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		log.Error().Err(err).Msg("Error rendering template")
 		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 		return
+	}
+}
+
+// SearchItem is one result row on the search page. It embeds model.Post so the
+// template reuses the same field and method names as the post list.
+type SearchItem struct {
+	model.Post
+	Rank float32
+	// TitleSnippet is the title with the query terms marked up. The template shows
+	// this instead of the plain Title so a title-only hit is visible.
+	TitleSnippet string
+	Snippet      string
+}
+
+type SearchPageData struct {
+	Query string
+	Items []SearchItem
+	Total int
+	// Prompt is true when no search was run because the query was below the
+	// minimum length, so the template asks for a keyword instead of claiming
+	// there were no matches.
+	Prompt bool
+}
+
+// SearchPosts renders the search results page. Like the other SSR handlers it
+// queries the repository directly; it shares the query bounds with the usecase
+// so the page and the JSON API agree on what counts as a usable query.
+func SearchPosts(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	userID, username, valid := userRepo.ValidSession(r, db)
+
+	log := logger.WithRequest(r, userID)
+	log.Info().Msg("Searching posts")
+
+	if r.Method != http.MethodGet {
+		log.Warn().Msg("Invalid method for search")
+		utils.RenderError(db, w, r, http.StatusMethodNotAllowed, valid, username)
+		return
+	}
+
+	query := strings.TrimSpace(r.FormValue("q"))
+
+	pageID := r.FormValue("PageID")
+	page, err := strconv.Atoi(pageID)
+	if err != nil && pageID != "" {
+		log.Warn().Str("page_id", pageID).Msg("Invalid page ID format")
+		utils.RenderError(db, w, r, http.StatusBadRequest, valid, username)
+		return
+	}
+	offset := (page - 1) * 10
+	if offset < 0 {
+		offset = 0
+	}
+
+	data := SearchPageData{Query: query}
+
+	if utf8.RuneCountInString(query) < usecase.MinSearchQueryLength {
+		data.Prompt = true
+		if err := utils.RenderTemplate(db, w, r, "search", http.StatusOK, data, valid, username); err != nil {
+			log.Error().Err(err).Msg("Error rendering template")
+			utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		}
+		return
+	}
+
+	result, status, err := postRepo.SearchPosts(db, query, offset)
+	if err != nil {
+		log.Error().Err(err).Str("query", query).Msg("Failed to search posts")
+		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
+		return
+	}
+	if status != http.StatusOK {
+		log.Warn().Int("status", status).Str("query", query).Msg("Search failed")
+		utils.RenderError(db, w, r, status, valid, username)
+		return
+	}
+
+	// Past the end of the result set, matching the other page routes.
+	if len(result.Results) == 0 && offset > 0 {
+		log.Warn().Str("query", query).Int("offset", offset).Msg("No search results for offset")
+		utils.RenderError(db, w, r, http.StatusNotFound, valid, username)
+		return
+	}
+
+	data.Items = make([]SearchItem, 0, len(result.Results))
+	for _, item := range result.Results {
+		data.Items = append(data.Items, SearchItem{
+			Post:         item.Post,
+			Rank:         item.Rank,
+			TitleSnippet: item.TitleSnippet,
+			Snippet:      item.Snippet,
+		})
+	}
+	data.Total = result.TotalCount
+
+	log.Info().Str("query", query).Int("results", len(data.Items)).Msg("Search completed")
+
+	if err := utils.RenderTemplate(db, w, r, "search", http.StatusOK, data, valid, username); err != nil {
+		log.Error().Err(err).Msg("Error rendering template")
+		utils.RenderError(db, w, r, http.StatusInternalServerError, valid, username)
 	}
 }
 

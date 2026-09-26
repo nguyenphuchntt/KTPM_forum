@@ -506,6 +506,121 @@ func FetchLikedPostsByUser(db *sql.DB, user_id model.AccountID, currentPage int)
 	return posts, 200, nil
 }
 
+// PostSearchResult is one full-text-search hit: the post, its relevance rank and
+// the matching terms marked up in <mark> — once inside the title and once inside
+// an excerpt of the content.
+type PostSearchResult struct {
+	Post model.Post
+	Rank float32
+	// TitleSnippet is the post title with the query terms marked. A term that
+	// matched only the title has no other place to show up, so highlighting the
+	// title is what makes such a hit legible.
+	TitleSnippet string
+	Snippet      string
+}
+
+type SearchPostsPage struct {
+	Results []PostSearchResult
+	// Total matching posts, independent of LIMIT/OFFSET, so the caller can
+	// report how many results exist beyond this page.
+	TotalCount int
+}
+
+// SearchPosts runs a full-text search over posts. Both the title and the content
+// are searched; the search_vector column weights a title hit above a content hit,
+// and the weights are spelled out in ts_rank so that ordering is visible here
+// rather than implied by the A/B labels over in the migration. The array is
+// {D, C, B, A} — the PostgreSQL default, with A = title at 1.0 and B = content at
+// 0.4, so a title match outranks a content match by 2.5x.
+//
+// query goes through websearch_to_tsquery, which parses natural input ("exact
+// phrase", OR, -exclude) and never raises a syntax error — an unusable query
+// simply yields no rows.
+//
+// Both snippets are built from stored text, which the write paths already ran
+// through html.EscapeString, so the only real markup they can contain is the
+// <mark> pair ts_headline inserts. Keep that escaping in place: the templates
+// render these fields unescaped on purpose.
+func SearchPosts(db *sql.DB, query string, offset int) (SearchPostsPage, int, error) {
+	var page SearchPostsPage
+
+	sqlQuery := `SELECT
+		p.id,
+		p.user_id,
+		a.username,
+		p.title,
+		p.content,
+		p.media_id,
+		p.like_count,
+		p.dislike_count,
+		p.comment_count,
+		p.created_at,
+		ts_rank('{0.1, 0.2, 0.4, 1.0}', p.search_vector, q.query) AS rank,
+		ts_headline('english', p.title, q.query,
+			'StartSel=<mark>, StopSel=</mark>, MaxWords=100, MinWords=1') AS title_snippet,
+		ts_headline('english', p.content, q.query,
+			'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS snippet,
+		COUNT(*) OVER() AS total_count
+	FROM
+		posts p
+		INNER JOIN accounts a ON a.id = p.user_id
+		CROSS JOIN websearch_to_tsquery('english', ?) AS q(query)
+	WHERE p.search_vector @@ q.query
+	ORDER BY
+		rank DESC,
+		p.created_at DESC
+	LIMIT 10 OFFSET ?`
+
+	rows, err := database.QueryWithMetrics(db, "search_posts", sqlQuery, query, offset)
+	if err != nil {
+		log.Println("Error executing query:", err)
+		return page, 500, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var result PostSearchResult
+		var postID int64
+		var userID uuid.UUID
+		var mediaID sql.NullInt64
+		err := rows.Scan(
+			&postID,
+			&userID,
+			&result.Post.Username,
+			&result.Post.Title,
+			&result.Post.Content,
+			&mediaID,
+			&result.Post.LikeCount,
+			&result.Post.DislikeCount,
+			&result.Post.CommentCount,
+			&result.Post.CreatedAt,
+			&result.Rank,
+			&result.TitleSnippet,
+			&result.Snippet,
+			&page.TotalCount,
+		)
+		if err != nil {
+			log.Println("Error scanning row:", err)
+			return page, 500, err
+		}
+		result.Post.ID = model.PostID(postID)
+		result.Post.UserID = model.AccountID(userID)
+		if mediaID.Valid {
+			mID := model.MediaID(mediaID.Int64)
+			result.Post.MediaID = &mID
+		}
+
+		page.Results = append(page.Results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("Error iterating rows:", err)
+		return page, 500, err
+	}
+
+	return page, 200, nil
+}
+
 func StorePost(db *sql.DB, user_id model.AccountID, title, content string, mediaID *model.MediaID) (int64, error) {
 	tx, err := db.Begin()
 	if err != nil {

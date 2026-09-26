@@ -1,0 +1,115 @@
+{{template "header.html" .}}
+{{template "navbar.html" .}}
+<div class="container">
+    <div class="posts">
+        <div class="posts-header">
+            <button class="nav-button" onclick="displayMobileNav()">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <a href="/post/create" class="create-post-link">
+                <i class="fa-solid fa-plus"></i>
+                Create post
+            </a>
+        </div>
+
+        <div class="search-summary">
+            {{if .Data.Prompt}}
+            <p class="search-hint">Type at least 2 characters to search posts.</p>
+            {{else}}
+            <p class="search-hint">
+                {{.Data.Total}} result(s) for <span class="search-term">“{{.Data.Query}}”</span>
+            </p>
+            {{end}}
+        </div>
+
+        {{if .Data.Items}}
+        {{range .Data.Items}}
+        <div class="post">
+            <div class="post-body">
+                {{/* TitleSnippet is the title with <mark> around the matches, rendered
+                unescaped for the same reason as the content snippet below. Falls back
+                to the plain title if ts_headline returned nothing. */}}
+                <a href="/post/{{.ID}}" class="post-title">{{if .TitleSnippet}}{{.TitleSnippet}}{{else}}{{.Title}}{{end}}</a>
+                <div class="post-header">
+                    <p class="post-user">{{.UserName}} </p>
+                    <span></span>
+                    <p class="post-time" data-timestamp="{{.CreatedAt}}">{{.CreatedAt}}</p>
+                </div>
+                {{/* ts_headline returns the stored content — already HTML-escaped on
+                the write path — with <mark> inserted around the matches. Rendering it
+                unescaped is deliberate: escaping it would print the tags instead of
+                highlighting the terms. */}}
+                <p class="post-content" id="post-content-home">{{.Snippet}}</p>
+                {{if .ImagePath}}
+                <div class="post-image-container">
+                    <img src="{{.ImagePath}}" alt="Post Image"
+                        style="max-width: 100%; height: auto; margin-top: 10px; border-radius: 8px;">
+                </div>
+                {{end}}
+            </div>
+            <div class="post-footer">
+                <button id="likescount{{.ID}}" onclick="postreaction('{{.ID}}','like')"
+                    class="post-like post-footer-hover"><i class="fa-regular fa-thumbs-up"></i>{{.Likes}}</button>
+                <button id="dislikescount{{.ID}}" onclick="postreaction('{{.ID}}','dislike')"
+                    class="post-dislike post-footer-hover"><i
+                        class="fa-regular fa-thumbs-down"></i>{{.Dislikes}}</button>
+                <a href="/post/{{.ID}}" class="post-comments post-footer-hover">
+                    <i class="fa-regular fa-comment"></i>{{.Comments}}
+                </a>
+            </div>
+            <span style="color:red" id="errorlogin{{.ID}}"></span>
+        </div>
+        {{end}}
+        {{else if not .Data.Prompt}}
+        <p class="no-posts">No posts matched your search.</p>
+        {{end}}
+    </div>
+
+    {{if .Data.Items}}
+    <div class="pagination">
+        <a onclick="searchPagination('back')" class="back" href="#">&laquo; Back</a>
+        <span class="currentpage">1</span>
+        <a onclick="searchPagination('next')" class="next" href="#">Next &raquo;</a>
+    </div>
+    {{end}}
+
+    <script>
+        // The shared pagination() helper in index.js builds its URL from
+        // location.pathname, which would drop ?q= and turn page 2 into plain
+        // /search?PageID=2. This page needs its own, so it keeps the query.
+        const searchParams = new URLSearchParams(window.location.search);
+        const searchQuery = searchParams.get('q') || '';
+        const searchPage = parseInt(searchParams.get('PageID')) > 0 ? parseInt(searchParams.get('PageID')) : 1;
+
+        function searchURL(page) {
+            return '/search?q=' + encodeURIComponent(searchQuery) + '&PageID=' + page;
+        }
+
+        function searchPagination(dir) {
+            const current = document.querySelector('.currentpage');
+            if (!current) return;
+            const page = parseInt(current.innerText) || 1;
+            window.location.href = searchURL(dir === 'next' ? page + 1 : page - 1);
+        }
+
+        const currentPageEl = document.querySelector('.currentpage');
+        if (currentPageEl) {
+            currentPageEl.innerText = searchPage;
+
+            if (searchPage <= 1) {
+                const back = document.querySelector('.back');
+                if (back) back.outerHTML = '<a class="back" style="cursor: not-allowed; color: grey;">&laquo; Back</a>';
+            }
+
+            // Probe one page ahead: past the end the page route answers 404, so a
+            // non-200 means this is the last page.
+            fetch(searchURL(searchPage + 1)).then(response => {
+                if (response.status !== 200) {
+                    const next = document.querySelector('.next');
+                    if (next) next.outerHTML = '<a class="next" style="cursor: not-allowed; color: grey;">Next &raquo;</a>';
+                }
+            });
+        }
+    </script>
+</div>
+{{template "footer.html"}}

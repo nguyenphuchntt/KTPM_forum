@@ -25,6 +25,22 @@ type PostListResponse struct {
 	Data []PostResponse `json:"data"`
 }
 
+// SearchPostItem is a post plus how well it matched. TitleSnippet and Snippet
+// hold the title and a content excerpt with the query terms wrapped in <mark>;
+// the plain Title and Content are still sent alongside them.
+type SearchPostItem struct {
+	PostResponse
+	Rank         float32 `json:"rank"`
+	TitleSnippet string  `json:"title_snippet"`
+	Snippet      string  `json:"snippet"`
+}
+
+type SearchPostListResponse struct {
+	Data       []SearchPostItem `json:"data"`
+	TotalCount int              `json:"total_count"`
+	Offset     int              `json:"offset"`
+}
+
 type ReactToPostResponse struct {
 	Likes    int `json:"likes"`
 	Dislikes int `json:"dislikes"`

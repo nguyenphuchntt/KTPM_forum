@@ -69,6 +69,18 @@ func Routes(db *sql.DB, storageConfig *config.MinIOConfig, storage cloud.Storage
 		}, db),
 	)
 
+	// Search results page. Like the other page routes it carries no endpoint
+	// limiter: those answer 429 with JSON, which a page route must not do.
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		controllers.SearchPosts(w, r, db)
+	})
+
+	// Registered here rather than in RegisterPostRoutes because it needs the
+	// endpoint limiter, which that helper does not receive. The literal pattern
+	// is more specific than /api/v1/posts/{id}, so it wins over the item route.
+	mux.Handle("/api/v1/posts/search",
+		endpointLimiter.LimitSearch(http.HandlerFunc(postC.SearchPostsJSON), db))
+
 	// Rate limited reactions
 	mux.HandleFunc("/post/postreaction", func(w http.ResponseWriter, r *http.Request) {
 		controllers.ReactToPost(w, r, db)

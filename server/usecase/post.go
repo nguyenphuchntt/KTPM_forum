@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -23,6 +24,8 @@ var (
 	ErrPostInvalidData  = errors.New("title, content, and categories are required")
 	ErrCategoryInvalid  = errors.New("one or more categories are invalid")
 	ErrPostMediaInvalid = NewAppError(http.StatusBadRequest, CodeValidationError, "image does not exist or does not belong to you")
+	ErrSearchQuery      = NewAppError(http.StatusBadRequest, CodeValidationError,
+		"từ khoá tìm kiếm phải từ 2 đến 100 ký tự")
 )
 
 type PostUsecase struct {
@@ -243,6 +246,67 @@ func (uc *PostUsecase) ListPostsByCategory(categoryID, offset int) ([]model.Post
 		return nil, http.StatusNotFound, ErrCategoryInvalid
 	}
 	return postRepository.FetchPostsByCategory(uc.db, categoryID, normalizeOffset(offset))
+}
+
+// Query bounds, shared with the SSR search page so the API and the page agree on
+// what counts as a usable query.
+const (
+	MinSearchQueryLength = 2
+	MaxSearchQueryLength = 100
+)
+
+type SearchPostsInput struct {
+	Query  string
+	Offset int
+}
+
+type SearchPostsItem struct {
+	Post model.Post
+	Rank float32
+	// TitleSnippet is the title with the query terms wrapped in <mark>, so a hit
+	// on the title alone is still visible in the result.
+	TitleSnippet string
+	Snippet      string
+}
+
+type SearchPostsResult struct {
+	Items      []SearchPostsItem
+	TotalCount int
+	// Query is the trimmed query that was actually searched for.
+	Query string
+}
+
+// SearchPosts runs a full-text search. It needs no session: searching is public,
+// like ListPosts.
+func (uc *PostUsecase) SearchPosts(input SearchPostsInput) (*SearchPostsResult, error) {
+	query := strings.TrimSpace(input.Query)
+	if length := utf8.RuneCountInString(query); length < MinSearchQueryLength || length > MaxSearchQueryLength {
+		return nil, ErrSearchQuery
+	}
+
+	page, status, err := postRepository.SearchPosts(uc.db, query, normalizeOffset(input.Offset))
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, NewAppError(status, CodeInternal, "could not search posts")
+	}
+
+	items := make([]SearchPostsItem, 0, len(page.Results))
+	for _, result := range page.Results {
+		items = append(items, SearchPostsItem{
+			Post:         result.Post,
+			Rank:         result.Rank,
+			TitleSnippet: result.TitleSnippet,
+			Snippet:      result.Snippet,
+		})
+	}
+
+	return &SearchPostsResult{
+		Items:      items,
+		TotalCount: page.TotalCount,
+		Query:      query,
+	}, nil
 }
 
 func normalizeOffset(offset int) int {

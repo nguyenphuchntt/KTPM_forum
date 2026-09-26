@@ -27,6 +27,13 @@ func ServeStaticFiles(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	}
 
+	// http.ServeFile sends Last-Modified but no Cache-Control or ETag, so a
+	// browser may reuse a stale script without revalidating — which silently
+	// breaks the page until a hard reload. Force a conditional request instead.
+	if strings.HasSuffix(filePath, ".js") || strings.HasSuffix(filePath, ".css") {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
 	// Serve the file
 	http.ServeFile(w, r, filePath)
 }

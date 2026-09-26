@@ -76,6 +76,52 @@ func (c PostController) ListPostsJSON(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response.NewPostListResponse(posts))
 }
 
+// SearchPostsJSON handles GET /api/v1/posts/search.
+//
+// The route is registered in routes.go rather than next to the other post
+// routes, because it needs the endpoint rate limiter and RegisterPostRoutes does
+// not receive it.
+func (c PostController) SearchPostsJSON(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed,
+			response.NewError(response.CodeValidationError, "method not allowed", nil))
+		return
+	}
+
+	offsetStr := r.URL.Query().Get("offset")
+	offset := 0
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	res, err := c.Post.SearchPosts(usecase.SearchPostsInput{
+		Query:  r.URL.Query().Get("q"),
+		Offset: offset,
+	})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	items := make([]response.SearchPostItem, 0, len(res.Items))
+	for _, item := range res.Items {
+		items = append(items, response.SearchPostItem{
+			PostResponse: response.NewPostResponse(item.Post),
+			Rank:         item.Rank,
+			TitleSnippet: item.TitleSnippet,
+			Snippet:      item.Snippet,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, response.SearchPostListResponse{
+		Data:       items,
+		TotalCount: res.TotalCount,
+		Offset:     offset,
+	})
+}
+
 // ShowPostJSON handles GET /api/v1/posts/{id}.
 func (c PostController) ShowPostJSON(w http.ResponseWriter, r *http.Request) {
 	postID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

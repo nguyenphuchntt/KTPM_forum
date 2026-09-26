@@ -21,6 +21,16 @@
                 <span class="forum-title">forum</span>
             </p>
         </a>
+        <!-- Sits between the logo and the user controls: header is a flex row
+        with space-between, so this third child lands in the middle. -->
+        <div class="header-search">
+            <i class="fa-solid fa-magnifying-glass header-search-icon"></i>
+            <input type="search" id="navbar-search" class="header-search-input" placeholder="Search posts..."
+                autocomplete="off" aria-label="Search posts" role="combobox" aria-expanded="false"
+                aria-controls="search-suggestions" aria-autocomplete="list">
+            <div class="search-suggestions" id="search-suggestions" role="listbox"
+                aria-label="Search suggestions" hidden></div>
+        </div>
         {{ if .IsAuthenticated}}
         <div class="header-user">
             <span class="header-username"><i class="fa-regular fa-user"></i>{{.UserName}}</span>

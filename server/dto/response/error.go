@@ -6,6 +6,7 @@ const (
 	CodeUnauthorized    = "unauthorized"
 	CodeNotFound        = "not_found"
 	CodeConflict        = "conflict"
+	CodeRateLimit       = "rate_limit_exceeded"
 	CodeInternal        = "internal_error"
 )
 
