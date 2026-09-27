@@ -8,14 +8,15 @@ import (
 	"text/template"
 
 	"forum/server/config"
-	"forum/server/models"
+	"forum/server/model"
+	categoryRepo "forum/server/repository/postgresql/category"
 )
 
 type GlobalData struct {
 	IsAuthenticated bool
 	Data            any
 	UserName        string
-	Categories      []models.Category
+	Categories      []model.Category
 }
 
 type Error struct {
@@ -55,7 +56,9 @@ func RenderTemplate(db *sql.DB, w http.ResponseWriter, r *http.Request, tmpl str
 	if err != nil {
 		return err
 	}
-	categories, err := models.FetchCategories(db)
+	// Categories fill the navbar on every page. A lookup failure degrades to an
+	// empty list rather than failing the whole render.
+	categories, err := categoryRepo.FetchCategories(db)
 	if err != nil {
 		categories = nil
 	}

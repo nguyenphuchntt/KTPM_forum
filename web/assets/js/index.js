@@ -497,8 +497,26 @@ window.CreatPost = async function () {
   btn.style.background = "grey";
   btn.style.cursor = "not-allowed";
 
-  let imageURL = "";
+  const resetPublishButton = () => {
+    document.getElementById("publish-post-icon").style.display = "inline-block";
+    document.getElementById("publish-post-circle").style.display = "none";
+    btn.disabled = false;
+    btn.style.background = "";
+    btn.style.cursor = "pointer";
+  };
+
+  let mediaId = "";
   if (imageInput.files.length > 0) {
+    // An image cannot be queued for later: storing it needs a pre-signed URL
+    // that expires in minutes, so offline means "drop the image or retry".
+    if (!navigator.onLine) {
+      logerror.innerText =
+        "You are offline - remove the image or try again once you are back online.";
+      logerror.style.color = "red";
+      resetPublishButton();
+      return;
+    }
+
     const file = imageInput.files[0];
     const uploadManager = new UploadManager();
 
@@ -510,20 +528,13 @@ window.CreatPost = async function () {
 
     try {
       const result = await uploadManager.upload(file);
-      imageURL = result.imageURL;
+      mediaId = result.mediaId;
       logerror.innerText = "Upload ảnh thành công!";
       logerror.style.color = "green";
     } catch (error) {
       logerror.innerText = `Lỗi upload: ${error.message}`;
       logerror.style.color = "red";
-
-      // Reset button
-      document.getElementById("publish-post-icon").style.display =
-        "inline-block";
-      document.getElementById("publish-post-circle").style.display = "none";
-      btn.disabled = false;
-      btn.style.background = "";
-      btn.style.cursor = "pointer";
+      resetPublishButton();
       return;
     }
   }
@@ -540,7 +551,7 @@ window.CreatPost = async function () {
         title: title.value,
         content: content.value,
         categories: cateris,
-        imageURL: imageURL,
+        mediaId: mediaId,
       },
     });
 
@@ -564,49 +575,21 @@ window.CreatPost = async function () {
   formData.append("content", content.value);
   cateris.forEach((catID) => formData.append("categories", catID));
 
-  if (imageURL) {
-    formData.append("image_url", imageURL);
+  if (mediaId) {
+    formData.append("media_id", mediaId);
   }
 
   xml.onreadystatechange = function () {
     if (xml.readyState === 4) {
       if (xml.status === 200) {
-        if (imageURL) {
-          logerror.innerText = "Post created! Verifying image availability...";
-          logerror.style.color = "blue";
-
-          // Poll for image availability
-          let attempts = 0;
-          const maxAttempts = 20; // 10 seconds
-
-          const checkImage = setInterval(() => {
-            attempts++;
-            fetch(imageURL, { method: "HEAD" })
-              .then((res) => {
-                if (res.ok || attempts >= maxAttempts) {
-                  clearInterval(checkImage);
-                  logerror.innerText = "Image ready! Redirecting...";
-                  logerror.style.color = "green";
-                  setTimeout(() => {
-                    window.location.href = "/";
-                  }, 500);
-                }
-              })
-              .catch(() => {
-                if (attempts >= maxAttempts) {
-                  clearInterval(checkImage);
-                  window.location.href = "/";
-                }
-              });
-          }, 500);
-        } else {
-          logerror.innerText =
-            "Post created successfully, redirect to home page in 1s ...";
-          logerror.style.color = "green";
-          setTimeout(() => {
-            window.location.href = "/";
-          }, 1000);
-        }
+        // The image was validated and published before the form was submitted,
+        // so there is nothing to wait for here.
+        logerror.innerText =
+          "Post created successfully, redirect to home page in 1s ...";
+        logerror.style.color = "green";
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1000);
       } else if (xml.status === 401) {
         logerror.innerText =
           "You are loged out, redirect to login page in 1s...";
@@ -621,7 +604,7 @@ window.CreatPost = async function () {
             title: title.value,
             content: content.value,
             categories: cateris,
-            imageURL: imageURL,
+            mediaId: mediaId,
           },
         });
 
@@ -640,13 +623,7 @@ window.CreatPost = async function () {
           logerror.innerText = "";
         }, 1500);
 
-        // Reset button on error
-        document.getElementById("publish-post-icon").style.display =
-          "inline-block";
-        document.getElementById("publish-post-circle").style.display = "none";
-        btn.disabled = false;
-        btn.style.background = "";
-        btn.style.cursor = "pointer";
+        resetPublishButton();
       }
     }
   };

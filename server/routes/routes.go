@@ -4,13 +4,28 @@ import (
 	"database/sql"
 	"net/http"
 
+	"forum/server/cloud"
 	"forum/server/config"
-	"forum/server/controllers"
+	"forum/server/controller"
 	"forum/server/middleware"
+	"forum/server/usecase"
 )
 
-func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookController *controllers.WebhookController) http.Handler {
+// Routes builds the mux. storage is nil when object storage is not configured,
+// in which case the upload and media routes are left unregistered.
+func Routes(db *sql.DB, storageConfig *config.MinIOConfig, storage cloud.Storage) http.Handler {
 	mux := http.NewServeMux()
+
+	// Layered (JSON API v1) dependencies and routes.
+	authUc := usecase.NewAuthUsecase(db)
+	postUc := usecase.NewPostUsecase(db, authUc)
+	commentUc := usecase.NewCommentUsecase(db, authUc)
+	authC := controllers.NewAuthController(authUc)
+	postC := controllers.NewPostController(postUc)
+	commentC := controllers.NewCommentController(commentUc)
+	controllers.RegisterAuthRoutes(mux, authC)
+	controllers.RegisterCommentRoutes(mux, commentC)
+	controllers.RegisterPostRoutes(mux, postC)
 
 	// Initialize rate limit config
 	rateLimitConfig := config.DefaultRateLimitConfig()
@@ -42,13 +57,7 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		controllers.ShowPost(w, r, db)
 	})
 
-	// Rate limited comment creation
-	mux.HandleFunc("/post/addcommentREQ",
-		endpointLimiter.LimitCreateComment(func(w http.ResponseWriter, r *http.Request) {
-			controllers.CreateComment(w, r, db)
-		}, db),
-	)
-
+	// Post creation form page
 	mux.HandleFunc("/post/create", func(w http.ResponseWriter, r *http.Request) {
 		controllers.GetPostCreationForm(w, r, db)
 	})
@@ -60,13 +69,29 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		}, db),
 	)
 
+	// Search results page. Like the other page routes it carries no endpoint
+	// limiter: those answer 429 with JSON, which a page route must not do.
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		controllers.SearchPosts(w, r, db)
+	})
+
+	// Registered here rather than in RegisterPostRoutes because it needs the
+	// endpoint limiter, which that helper does not receive. The literal pattern
+	// is more specific than /api/v1/posts/{id}, so it wins over the item route.
+	mux.Handle("/api/v1/posts/search",
+		endpointLimiter.LimitSearch(http.HandlerFunc(postC.SearchPostsJSON), db))
+
 	// Rate limited reactions
 	mux.HandleFunc("/post/postreaction", func(w http.ResponseWriter, r *http.Request) {
 		controllers.ReactToPost(w, r, db)
 	})
 
+	mux.HandleFunc("/post/addcommentREQ", func(w http.ResponseWriter, r *http.Request) {
+		commentC.CreateCommentSSR(w, r)
+	})
+
 	mux.HandleFunc("/post/commentreaction", func(w http.ResponseWriter, r *http.Request) {
-		controllers.ReactToComment(w, r, db)
+		commentC.ReactToCommentSSR(w, r)
 	})
 
 	// Delete post route
@@ -100,19 +125,22 @@ func Routes(db *sql.DB, uploadGatekeeper *middleware.UploadGatekeeper, webhookCo
 		controllers.GetRegisterPage(w, r, db)
 	})
 
-	// API routes for image upload (if gatekeeper available)
-	if uploadGatekeeper != nil {
-		// Request SAS token to upload to quarantine
-		mux.Handle("/api/upload/request-url", endpointLimiter.LimitUpload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			uploadGatekeeper.GenerateUploadURL(w, r)
-		}), db))
-	}
+	// Image upload (valet key). Both endpoints are absent when object storage is
+	// not configured, so the app degrades instead of failing requests later.
+	if storage != nil {
+		uploadUc := usecase.NewUploadUsecase(db, storage, storageConfig, authUc)
+		uploadC := controllers.NewUploadController(uploadUc)
+		mediaC := controllers.NewMediaController(uploadUc)
 
-	// Webhook for Event Grid
-	if webhookController != nil {
-		mux.HandleFunc("/api/webhook/blob-created", func(w http.ResponseWriter, r *http.Request) {
-			webhookController.HandleBlobCreated(w, r)
-		})
+		// One upload costs two requests here (ticket + confirm), which is why
+		// the shared bucket is sized for twice the intended uploads per minute.
+		mux.Handle("/api/upload/request-url",
+			endpointLimiter.LimitUpload(http.HandlerFunc(uploadC.RequestUploadURLJSON), db))
+		mux.Handle("/api/upload/confirm",
+			endpointLimiter.LimitUpload(http.HandlerFunc(uploadC.ConfirmUploadJSON), db))
+
+		// This is the route model.Post.ImagePath has always pointed <img src> at.
+		controllers.RegisterMediaRoutes(mux, mediaC)
 	}
 
 	return mux

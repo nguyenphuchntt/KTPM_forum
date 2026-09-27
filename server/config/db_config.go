@@ -1,48 +1,49 @@
 package config
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
-	"forum/server/utils/retry"
 	"log"
 	"os"
-	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv"
 )
 
-func Connect() (*sql.DB, error) {
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
+func buildDSN() string {
+	if source := os.Getenv("DB_SOURCE"); source != "" {
+		return source
+	}
+
 	host := os.Getenv("DB_HOST")
 	port := os.Getenv("DB_PORT")
+	if port == "" {
+		port = "5432"
+	}
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
 	database := os.Getenv("DB_NAME")
+	sslmode := os.Getenv("DB_SSLMODE")
+	if sslmode == "" {
+		sslmode = "disable"
+	}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true", user, password, host, port, database)
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, database, sslmode)
+}
+
+func Connect() (*sql.DB, error) {
+	dsn := buildDSN()
 	log.Printf("Trying to connect to database")
 
-	ctx, cancelF := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancelF()
-
-	retryConfig := retry.InitDatabaseConnectionRetryConfig()
-	db, err := retry.TryWithResult(ctx, retryConfig, func() (*sql.DB, error) {
-		db, err := sql.Open("mysql", dsn)
-		if err != nil {
-			return nil, fmt.Errorf("failed open database connection with error: %v", err)
-		}
-		err = db.Ping()
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed ping database connection with error: %v", err)
-		}
-
-		return db, nil
-	})
-
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed create database connection after maximum attempts with error: %v", err)
+		return nil, fmt.Errorf("failed open database connection: %v", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed ping database: %v", err)
 	}
 
 	poolConfig := LoadDBPoolConfigFromEnv()

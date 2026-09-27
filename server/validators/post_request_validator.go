@@ -1,10 +1,13 @@
 package validators
 
 import (
+	"encoding/json"
 	"html"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"forum/server/dto/request"
 )
 
 // validates a request for posts index.
@@ -168,4 +171,47 @@ func CreatePostRequest(r *http.Request) (int, string, string, string, []int) {
 		html.EscapeString(title),
 		html.EscapeString(content),
 		convertCategories
+}
+
+func BindCreatePostRequest(r *http.Request) (request.CreatePostRequest, error) {
+	var req request.CreatePostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func ValidateCreatePostRequest(req request.CreatePostRequest) map[string]string {
+	details := make(map[string]string)
+	if strings.TrimSpace(req.Title) == "" {
+		details["title"] = "title is required"
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		details["content"] = "content is required"
+	}
+	if len(req.Categories) == 0 {
+		details["categories"] = "at least one category is required"
+	}
+	if req.MediaID != nil && *req.MediaID <= 0 {
+		details["media_id"] = "media_id must be a positive integer"
+	}
+	if len(details) > 0 {
+		return details
+	}
+	return nil
+}
+
+func BindReactToPostRequest(r *http.Request) (request.ReactToPostRequest, error) {
+	var req request.ReactToPostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func ValidateReactToPostRequest(req request.ReactToPostRequest) map[string]string {
+	if req.Reaction != "like" && req.Reaction != "dislike" {
+		return map[string]string{"reaction": "reaction must be 'like' or 'dislike'"}
+	}
+	return nil
 }

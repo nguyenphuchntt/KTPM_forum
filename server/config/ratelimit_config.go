@@ -25,9 +25,12 @@ type RateLimitConfig struct {
 	LoginWindowSize           time.Duration
 	RegisterAttemptsPerWindow int
 	RegisterWindowSize        time.Duration
-	PostsPerHour              int
-	CommentsPerHour           int
-	UploadRequestsPerMinute   int
+	PostsPerHour            int
+	CommentsPerHour         int
+	UploadRequestsPerMinute int
+	// The search box fires while the user types, so this is sized for a
+	// debounced type-ahead rather than for deliberate submissions.
+	SearchRequestsPerMinute int
 }
 
 // DefaultRateLimitConfig returns default rate limiting configuration
@@ -51,7 +54,10 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		PostsPerHour:              getEnvInt("POSTS_PER_HOUR", 50),
 		CommentsPerHour:           getEnvInt("COMMENTS_PER_HOUR", 100),
 
-		UploadRequestsPerMinute:   getEnvInt("UPLOAD_REQUESTS_PER_MINUTE", 5),
+		// One upload spends two requests: the pre-signed ticket and the confirm,
+		// so this allows 5 uploads per minute per user.
+		UploadRequestsPerMinute: getEnvInt("UPLOAD_REQUESTS_PER_MINUTE", 10),
+		SearchRequestsPerMinute: getEnvInt("SEARCH_REQUESTS_PER_MINUTE", 60),
 	}
 }
 

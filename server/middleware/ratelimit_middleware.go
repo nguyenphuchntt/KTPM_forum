@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"forum/server/config"
-	"forum/server/metrics"
+	"forum/server/dto/response"
 	"forum/server/middleware/ratelimit"
-	"forum/server/models"
+	userRepo "forum/server/repository/postgresql/user"
 )
 
 // RateLimitMiddleware manages rate limiting for the application
@@ -56,7 +56,6 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 
 		// 1. Check global rate limit
 		if !m.globalLimiter.Allow("global") {
-			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, "global").Inc()
 			m.sendRateLimitError(w, r, "Too many requests globally. Please try again later.")
 			return
 		}
@@ -80,11 +79,6 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 		}
 
 		if !limiter.Allow(limitKey) {
-			limiterType := "ip"
-			if userID != "" {
-				limiterType = "user"
-			}
-			metrics.RateLimitDropsTotal.WithLabelValues(r.URL.Path, limiterType).Inc()
 			m.sendRateLimitError(w, r, "Rate limit exceeded. Please slow down.")
 			return
 		}
@@ -98,11 +92,11 @@ func (m *RateLimitMiddleware) Limit(next http.Handler) http.Handler {
 
 // getUserID extracts user ID from session
 func (m *RateLimitMiddleware) getUserID(r *http.Request) string {
-	userID, _, valid := models.ValidSession(r, m.db)
+	userID, _, valid := userRepo.ValidSession(r, m.db)
 	if !valid {
 		return ""
 	}
-	return fmt.Sprintf("%d", userID)
+	return userID.String()
 }
 
 // getClientIP extracts the real client IP address
@@ -131,14 +125,14 @@ func (m *RateLimitMiddleware) getClientIP(r *http.Request) string {
 // sendRateLimitError sends a rate limit error response
 func (m *RateLimitMiddleware) sendRateLimitError(w http.ResponseWriter, r *http.Request, message string) {
 	w.Header().Set("Retry-After", "60")
-	
+
 	// Log the rate limit violation
 	log.Printf("RATE_LIMIT_EXCEEDED | IP: %s | Path: %s | Method: %s",
 		m.getClientIP(r), r.URL.Path, r.Method)
 
 	// Check if it's an AJAX/API request
-	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" || 
-	   strings.Contains(r.Header.Get("Accept"), "application/json") {
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" ||
+		strings.Contains(r.Header.Get("Accept"), "application/json") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -179,6 +173,7 @@ type EndpointRateLimiter struct {
 	postLimiter     *ratelimit.WindowRateLimiter
 	commentLimiter  *ratelimit.WindowRateLimiter
 	uploadLimiter   *ratelimit.WindowRateLimiter
+	searchLimiter   *ratelimit.WindowRateLimiter
 	config          *config.RateLimitConfig
 	db              *sql.DB
 }
@@ -205,6 +200,9 @@ func NewEndpointRateLimiter(db *sql.DB, cfg *config.RateLimitConfig) *EndpointRa
 		// Upload: configurable uploads per minute
 		uploadLimiter: ratelimit.NewWindowRateLimiter(cfg.UploadRequestsPerMinute, 1*time.Minute),
 
+		// Search: configurable searches per minute
+		searchLimiter: ratelimit.NewWindowRateLimiter(cfg.SearchRequestsPerMinute, 1*time.Minute),
+
 		config: cfg,
 		db:     db,
 	}
@@ -219,9 +217,7 @@ func (e *EndpointRateLimiter) LimitLogin(next http.HandlerFunc, db *sql.DB) http
 		if !e.loginLimiter.Allow(key) {
 			log.Printf("[RATE_LIMIT] Type=login | IP=%s | Limit=%d/%v",
 				ip, e.config.LoginAttemptsPerWindow, e.config.LoginWindowSize)
-			
-			metrics.RateLimitDropsTotal.WithLabelValues("/signin", "login").Inc()
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -245,9 +241,7 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 		if !e.registerLimiter.Allow(key) {
 			log.Printf("[RATE_LIMIT] Type=register | IP=%s | Limit=%d/%v",
 				ip, e.config.RegisterAttemptsPerWindow, e.config.RegisterWindowSize)
-			
-			metrics.RateLimitDropsTotal.WithLabelValues("/signup", "register").Inc()
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -265,19 +259,17 @@ func (e *EndpointRateLimiter) LimitRegister(next http.HandlerFunc, db *sql.DB) h
 // LimitCreatePost rate limits post creation
 func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if !valid {
 			next(w, r)
 			return
 		}
 
-		key := fmt.Sprintf("post:%d", userID)
+		key := fmt.Sprintf("post:%s", userID)
 		if !e.postLimiter.Allow(key) {
-			log.Printf("[RATE_LIMIT] Type=post | UserID=%d | Limit=%d/hour",
+			log.Printf("[RATE_LIMIT] Type=post | UserID=%s | Limit=%d/hour",
 				userID, e.config.PostsPerHour)
-			
-			metrics.RateLimitDropsTotal.WithLabelValues("/post/createpost", "post").Inc()
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -295,19 +287,17 @@ func (e *EndpointRateLimiter) LimitCreatePost(next http.HandlerFunc, db *sql.DB)
 // LimitCreateComment rate limits comment creation
 func (e *EndpointRateLimiter) LimitCreateComment(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if !valid {
 			next(w, r)
 			return
 		}
 
-		key := fmt.Sprintf("comment:%d", userID)
+		key := fmt.Sprintf("comment:%s", userID)
 		if !e.commentLimiter.Allow(key) {
-			log.Printf("[RATE_LIMIT] Type=comment | UserID=%d | Limit=%d/hour",
+			log.Printf("[RATE_LIMIT] Type=comment | UserID=%s | Limit=%d/hour",
 				userID, e.config.CommentsPerHour)
-			
-			metrics.RateLimitDropsTotal.WithLabelValues("/post/addcommentREQ", "comment").Inc()
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -328,11 +318,11 @@ func (e *EndpointRateLimiter) LimitUpload(next http.Handler, db *sql.DB) http.Ha
 		// Use IP for upload limiting to prevent spam from same source
 		// (Even if authenticated, we want to limit by source IP for uploads as an extra layer)
 		// Or better: use UserID if available, else IP.
-		
+
 		var key string
-		userID, _, valid := models.ValidSession(r, db)
+		userID, _, valid := userRepo.ValidSession(r, db)
 		if valid {
-			key = fmt.Sprintf("upload:user:%d", userID)
+			key = fmt.Sprintf("upload:user:%s", userID)
 		} else {
 			ip := getClientIP(r)
 			key = "upload:ip:" + ip
@@ -346,6 +336,36 @@ func (e *EndpointRateLimiter) LimitUpload(next http.Handler, db *sql.DB) http.Ha
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LimitSearch rate limits the search endpoint, which the navbar suggestion
+// dropdown calls while the user types. Keyed by session when there is one and by
+// IP otherwise. Unlike LimitUpload this answers with the shared JSON error
+// envelope, because the only caller is the JSON API.
+func (e *EndpointRateLimiter) LimitSearch(next http.HandlerFunc, db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var key string
+		userID, _, valid := userRepo.ValidSession(r, db)
+		if valid {
+			key = fmt.Sprintf("search:user:%s", userID)
+		} else {
+			key = "search:ip:" + getClientIP(r)
+		}
+
+		if !e.searchLimiter.Allow(key) {
+			log.Printf("[RATE_LIMIT] Type=search | Key=%s | Limit=%d/min",
+				key, e.config.SearchRequestsPerMinute)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(response.NewError(response.CodeRateLimit,
+				"Bạn tìm kiếm quá nhanh. Vui lòng thử lại sau.", nil))
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 // Helper function to get client IP

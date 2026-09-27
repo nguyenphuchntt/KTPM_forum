@@ -111,8 +111,10 @@ class OfflineQueueManager {
     formData.append('content', item.data.content);
     item.data.categories.forEach(catID => formData.append('categories', catID));
     
-    if (item.data.imageURL) {
-      formData.append('image_url', item.data.imageURL);
+    // The image was already uploaded and validated before the post was queued,
+    // and media ids do not expire, so the queued post can still attach it.
+    if (item.data.mediaId) {
+      formData.append('media_id', item.data.mediaId);
     }
 
     const response = await fetch('/post/createpost', {

@@ -1,0 +1,39 @@
+package controllers
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"database/sql"
+
+	"forum/server/config"
+	"forum/server/utils"
+)
+
+// ServeStaticFiles returns a handler function for serving static files
+func ServeStaticFiles(db *sql.DB, w http.ResponseWriter, r *http.Request) {
+	// Get clean file path and prevent directory traversal
+	filePath := filepath.Clean(config.BasePath + "web/assets" + strings.TrimPrefix(r.URL.Path, "/assets"))
+
+	// block access to dirictories
+	if info, err := os.Stat(filePath); err != nil || info.IsDir() {
+		utils.RenderError(db, w, r, http.StatusNotFound, false, "")
+		return
+	}
+
+	// Set proper MIME type for JavaScript modules
+	if strings.HasSuffix(filePath, ".js") {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	}
+
+	// http.ServeFile sends Last-Modified but no Cache-Control or ETag, so a
+	// browser may reuse a stale script without revalidating — which silently
+	// breaks the page until a hard reload. Force a conditional request instead.
+	if strings.HasSuffix(filePath, ".js") || strings.HasSuffix(filePath, ".css") {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
+	// Serve the file
+	http.ServeFile(w, r, filePath)
+}
